@@ -48,17 +48,33 @@ export default function TaskDetails() {
     fetchTask();
   }, [id]);
 
-  // Status va Hisobotni yangilash
+  // Status va Hisobotni yangilash (Rasm majburiy emas)
   const handleUpdate = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setUpdating(true);
     try {
-      await updateTaskStatus(id, status, comment, imageUrl);
+      await updateTaskStatus(id, status, comment, imageUrl || "");
       alert("Hisobot va status munosabati yangilandi!");
       navigate("/tasks");
     } catch (err) {
       console.error(err);
       alert("Yangilashda xatolik yuz berdi");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  // Bir bosishda tezkor "Bajarildi" statusiga o'tkazish
+  const handleQuickComplete = async () => {
+    setUpdating(true);
+    try {
+      await updateTaskStatus(id, "completed", comment, imageUrl || "");
+      setStatus("completed");
+      alert("Topshiriq bajarildi deb belgilandi!");
+      navigate("/tasks");
+    } catch (err) {
+      console.error(err);
+      alert("Xatolik yuz berdi");
     } finally {
       setUpdating(false);
     }
@@ -99,7 +115,7 @@ export default function TaskDetails() {
     }
   };
 
-  // 3. Ovozli xabarni Firebase Storage va Firestore'ga saqlash
+  // 3. Ovozli xabarni yuborish
   const handleSendVoice = async () => {
     if (!audioBlob) return;
     setUploadingVoice(true);
@@ -107,7 +123,7 @@ export default function TaskDetails() {
       await uploadTaskVoice(id, audioBlob);
       setAudioBlob(null);
       setAudioUrl(null);
-      await reloadTask(); // Yozib bo'lingach, topshiriq ma'lumotlarini yangilaymiz
+      await reloadTask();
     } catch (err) {
       console.error(err);
       alert("Ovozli xabarni yuborishda xatolik yuz berdi");
@@ -203,7 +219,6 @@ export default function TaskDetails() {
       <div className="border-t border-gray-100 pt-6 mt-6">
         <h3 className="text-lg font-semibold text-gray-800 mb-3">Ovozli xabarlar</h3>
 
-        {/* 1. Kelgan/Yozilgan ovozlar ro'yxati */}
         <div className="space-y-2 mb-4">
           {task.voices && task.voices.length > 0 ? (
             task.voices.map((v, idx) => (
@@ -219,7 +234,7 @@ export default function TaskDetails() {
           )}
         </div>
 
-        {/* 2. Yangi Ovoz yozish paneli */}
+        {/* Yangi Ovoz yozish paneli */}
         <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-600">Ovozli xabar yuborish</span>
@@ -243,7 +258,6 @@ export default function TaskDetails() {
             )}
           </div>
 
-          {/* Yozilgan audio pleyeri va Yuborish tugmasi */}
           {audioUrl && (
             <div className="flex items-center gap-3 pt-3 border-t border-gray-200">
               <audio src={audioUrl} controls className="h-8 w-full" />
@@ -263,7 +277,19 @@ export default function TaskDetails() {
       {/* Xodim uchun hisobot topshirish formasi */}
       {userRole === "employee" && (
         <form onSubmit={handleUpdate} className="space-y-4 border-t border-gray-100 pt-6 mt-6">
-          <h3 className="text-lg font-semibold text-gray-800">Topshiriq Holatini Yangilash</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-800">Topshiriq Holatini Yangilash</h3>
+            {status !== "completed" && (
+              <button
+                type="button"
+                onClick={handleQuickComplete}
+                disabled={updating}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition shadow-sm"
+              >
+                ✅ Tezkor "Bajarildi" qilish
+              </button>
+            )}
+          </div>
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
@@ -290,13 +316,15 @@ export default function TaskDetails() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Rasm havola (Foto-hisobot URL)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Rasm havola (Foto-hisobot URL) <span className="text-gray-400 font-normal">(ixtiyoriy)</span>
+            </label>
             <input
               type="text"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
               className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="https://..."
+              placeholder="https://... (bo'sh qolishi ham mumkin)"
             />
           </div>
 
@@ -310,7 +338,7 @@ export default function TaskDetails() {
         </form>
       )}
 
-      {/* Hokim va boshqa rollar uchun topshirilgan hisobot moduli */}
+      {/* Topshirilgan hisobot moduli */}
       {task.report && (task.report.comment || task.report.imageUrl) && (
         <div className="border-t border-gray-100 pt-6 mt-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-3">Xodimlarning Hisoboti</h3>
