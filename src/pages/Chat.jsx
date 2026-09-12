@@ -1,8 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase/config';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, getDocs, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  orderBy, 
+  onSnapshot, 
+  serverTimestamp, 
+  doc, 
+  updateDoc, 
+  deleteDoc, 
+  writeBatch,
+  where,
+  or,
+  and,
+  getDocs
+} from 'firebase/firestore';
 import { useAuthContext } from '../context/AuthContext';
-import { Send, Mic, Square, User, Volume2, Reply, Edit2, Trash2, X, CornerDownRight, MoreVertical, Search, Image as ImageIcon, Check, CheckCheck } from 'lucide-react';
+import { 
+  Send, Mic, Square, User, Volume2, Reply, Edit2, 
+  Trash2, X, CornerDownRight, MoreVertical, Search, 
+  Image as ImageIcon, Check, CheckCheck, Trash
+} from 'lucide-react';
 
 export default function Chat() {
   const { user } = useAuthContext();
@@ -12,10 +31,12 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   
-  // O'qilmagan xabarlar soni
+  // O'qilmagan xabarlar va typing holatlari
   const [unreadCounts, setUnreadCounts] = useState({});
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
 
   const [activeMenuId, setActiveMenuId] = useState(null);
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false); // Headerdagi 3-nuqta menyusi uchun
   const [replyTo, setReplyTo] = useState(null);
   const [editingMessage, setEditingMessage] = useState(null);
 
@@ -24,17 +45,25 @@ export default function Chat() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
-  // Rasm uchun state
   const [imageBase64, setImageBase64] = useState(null);
   const imageInputRef = useRef(null);
+  
+  const messagesEndRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
-  // 1. ONLAYN / OFLAYN STATUSINI BOSHQARISH
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isOtherTyping]);
+
+  // 1. ONLAYN / OFLAYN / TYPING STATUSINI BOSHQARISH
   useEffect(() => {
     if (!user?.uid) return;
-
     const userDocRef = doc(db, 'users', user.uid);
 
-    // Onlayn holatga o'tkazish
     const setOnline = async () => {
       try {
         await updateDoc(userDocRef, {
@@ -46,11 +75,11 @@ export default function Chat() {
       }
     };
 
-    // Oflayn holatga o'tkazish
     const setOffline = async () => {
       try {
         await updateDoc(userDocRef, {
           isOnline: false,
+          isTypingTo: null,
           lastSeen: serverTimestamp()
         });
       } catch (err) {
@@ -76,7 +105,7 @@ export default function Chat() {
     };
   }, [user]);
 
-  // 2. Foydalanuvchilarni real-time (onlayn/oflayn statusi bilan) yuklash
+  // 2. Foydalanuvchilarni real-time yuklash
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -85,24 +114,27 @@ export default function Chat() {
       const usersList = [];
       snapshot.forEach((docSnap) => {
         if (docSnap.id !== user?.uid) {
-          usersList.push({ id: docSnap.id, ...docSnap.data() });
+          const data = docSnap.data();
+          usersList.push({ id: docSnap.id, ...data });
+
+          if (selectedUser && docSnap.id === selectedUser.id) {
+            setIsOtherTyping(data.isTypingTo === user.uid);
+          }
         }
       });
       setEmployees(usersList);
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, selectedUser]);
 
-  // 3. FAQAT O'QILMAGAN xabarlarni hisoblash
+  // 3. O'QILMAGAN xabarlarni hisoblash
   useEffect(() => {
     if (!user?.uid) return;
 
     const q = query(collection(db, 'chats'));
-
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const counts = {};
-
       snapshot.docs.forEach((docSnap) => {
         const data = docSnap.data();
         if (data.receiverId === user.uid && data.isRead === false) {
@@ -110,7 +142,6 @@ export default function Chat() {
           counts[senderId] = (counts[senderId] || 0) + 1;
         }
       });
-
       setUnreadCounts(counts);
     });
 
@@ -127,22 +158,22 @@ export default function Chat() {
     return checkStartsWithWord(emp.fullName) || checkStartsWithWord(emp.email) || checkStartsWithWord(emp.role);
   });
 
-  // 4. Tanlangan chat xabarlarini yuklash va ularni O'QILGAN deb belgilash
+  // 4. Tanlangan chat xabarlarini yuklash va O'QILGAN deb belgilash
   useEffect(() => {
-    if (!selectedUser) return;
+    if (!selectedUser || !user?.uid) return;
 
     const q = query(
       collection(db, 'chats'),
+      or(
+        and(where('senderId', '==', user.uid), where('receiverId', '==', selectedUser.id)),
+        and(where('senderId', '==', selectedUser.id), where('receiverId', '==', user.uid))
+      ),
       orderBy('createdAt', 'asc')
     );
 
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const allMsgs = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-      const filtered = allMsgs.filter(
-        m => (m.senderId === user.uid && m.receiverId === selectedUser.id) ||
-             (m.senderId === selectedUser.id && m.receiverId === user.uid)
-      );
-      setMessages(filtered);
+      const msgs = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+      setMessages(msgs);
 
       const unreadDocs = snapshot.docs.filter(
         d => d.data().senderId === selectedUser.id && 
@@ -161,6 +192,50 @@ export default function Chat() {
 
     return () => unsubscribe();
   }, [selectedUser, user]);
+
+  // CHATNI TOZALASH FUNKSIYASI
+  const handleClearChat = async () => {
+    if (!selectedUser || !user?.uid) return;
+    
+    if (window.confirm(`${selectedUser.fullName || selectedUser.email} bilan bo'lgan barcha xabarlarni o'chirmoqchimisiz?`)) {
+      try {
+        const q = query(
+          collection(db, 'chats'),
+          or(
+            and(where('senderId', '==', user.uid), where('receiverId', '==', selectedUser.id)),
+            and(where('senderId', '==', selectedUser.id), where('receiverId', '==', user.uid))
+          )
+        );
+
+        const snapshot = await getDocs(q);
+        const batch = writeBatch(db);
+
+        snapshot.docs.forEach((docSnap) => {
+          batch.delete(docSnap.ref);
+        });
+
+        await batch.commit();
+        setIsHeaderMenuOpen(false);
+      } catch (err) {
+        console.error("Chatni tozalashda xatolik:", err);
+        alert("Chatni tozalashda xatolik yuz berdi.");
+      }
+    }
+  };
+
+  const handleInputChange = (e) => {
+    setNewMessage(e.target.value);
+    if (!selectedUser) return;
+
+    const userDocRef = doc(db, 'users', user.uid);
+    updateDoc(userDocRef, { isTypingTo: selectedUser.id });
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    
+    typingTimeoutRef.current = setTimeout(() => {
+      updateDoc(userDocRef, { isTypingTo: null });
+    }, 2000);
+  };
 
   const blobToBase64 = (blob) => {
     return new Promise((resolve, reject) => {
@@ -238,6 +313,8 @@ export default function Chat() {
     e.preventDefault();
     if ((!newMessage.trim() && !audioBase64 && !imageBase64) || !selectedUser) return;
 
+    updateDoc(doc(db, 'users', user.uid), { isTypingTo: null });
+
     if (editingMessage) {
       try {
         await updateDoc(doc(db, 'chats', editingMessage.id), {
@@ -308,10 +385,16 @@ export default function Chat() {
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <div className="h-[calc(100vh-80px)] bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col md:flex-row relative">
       
-      {/* CHAP TARAFI */}
+      {/* CHAP TARAFI - XODIMLAR RO'YXATI */}
       <div className={`w-full md:w-1/3 border-r border-slate-200 bg-slate-50 flex-col ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-4 border-b border-slate-200 bg-slate-100 space-y-3">
           <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
@@ -340,76 +423,126 @@ export default function Chat() {
           {filteredEmployees.length === 0 ? (
             <p className="p-4 text-xs text-slate-400 text-center">Boshqa foydalanuvchilar topilmadi</p>
           ) : (
-            filteredEmployees.map((emp) => (
-              <button
-                key={emp.id}
-                onClick={() => { setSelectedUser(emp); cancelAction(); }}
-                className={`w-full p-4 flex items-center justify-between hover:bg-blue-50 transition text-left ${
-                  selectedUser?.id === emp.id ? 'bg-blue-100/70 border-l-4 border-blue-600' : ''
-                }`}
-              >
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="relative shrink-0">
-                    <div className="w-10 h-10 rounded-full bg-slate-300 flex items-center justify-center font-bold text-slate-700 uppercase">
-                      {emp.fullName ? emp.fullName[0] : (emp.email ? emp.email[0] : 'U')}
+            filteredEmployees.map((emp) => {
+              const userAvatar = emp.photoURL || emp.avatarUrl;
+
+              return (
+                <button
+                  key={emp.id}
+                  onClick={() => { setSelectedUser(emp); cancelAction(); setIsHeaderMenuOpen(false); }}
+                  className={`w-full p-4 flex items-center justify-between hover:bg-blue-50 transition text-left ${
+                    selectedUser?.id === emp.id ? 'bg-blue-100/70 border-l-4 border-blue-600' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="relative shrink-0">
+                      {userAvatar ? (
+                        <img 
+                          src={userAvatar} 
+                          alt="Avatar" 
+                          className="w-10 h-10 rounded-full object-cover border border-slate-300"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold uppercase">
+                          {emp.fullName ? emp.fullName[0] : (emp.email ? emp.email[0] : 'U')}
+                        </div>
+                      )}
+                      
+                      <span 
+                        className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
+                          emp.isOnline ? 'bg-green-500' : 'bg-slate-400'
+                        }`}
+                      />
                     </div>
-                    {/* Foydalanuvchining Onlayn/Oflayn indikatori */}
-                    <span 
-                      className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
-                        emp.isOnline ? 'bg-green-500' : 'bg-slate-400'
-                      }`}
-                    />
+
+                    <div className="overflow-hidden">
+                      <h4 className="font-semibold text-slate-800 text-sm truncate">{emp.fullName || emp.email}</h4>
+                      <span className="text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600 uppercase font-medium">
+                        {emp.role || 'xodim'}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="overflow-hidden">
-                    <h4 className="font-semibold text-slate-800 text-sm truncate">{emp.fullName || emp.email}</h4>
-                    <span className="text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600 uppercase font-medium">
-                      {emp.role || 'xodim'}
+                  {unreadCounts[emp.id] > 0 && (
+                    <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shrink-0 shadow-sm ml-2 animate-pulse">
+                      {unreadCounts[emp.id]}
                     </span>
-                  </div>
-                </div>
-
-                {unreadCounts[emp.id] > 0 && (
-                  <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shrink-0 shadow-sm ml-2 animate-pulse">
-                    {unreadCounts[emp.id]}
-                  </span>
-                )}
-              </button>
-            ))
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
       </div>
 
-      {/* O'NG TARAFI: CHAT OYNASI */}
+      {/* O'NG TARAFI - CHAT OYNASI */}
       <div className={`flex-1 flex-col bg-slate-100 ${!selectedUser ? 'hidden md:flex' : 'flex'}`}>
         {selectedUser ? (
           <>
-            {/* Header: Chat egasi va onlayn statusi */}
-            <div className="p-3 md:p-4 bg-white border-b border-slate-200 flex items-center gap-3">
-              <button onClick={() => setSelectedUser(null)} className="md:hidden p-1.5 rounded-lg bg-slate-100 text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-              
-              <div className="relative shrink-0">
-                <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold uppercase text-sm">
-                  {selectedUser.fullName ? selectedUser.fullName[0] : selectedUser.email[0]}
+            {/* HEADER BO'LIMI (3 TA NUQTA BO'LIMI SHU YERDA) */}
+            <div className="p-3 md:p-4 bg-white border-b border-slate-200 flex items-center justify-between relative z-20">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <button onClick={() => setSelectedUser(null)} className="md:hidden p-1.5 rounded-lg bg-slate-100 text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+                
+                {/* User Avatar */}
+                <div className="relative shrink-0">
+                  {(selectedUser.photoURL || selectedUser.avatarUrl) ? (
+                    <img 
+                      src={selectedUser.photoURL || selectedUser.avatarUrl} 
+                      alt="Avatar" 
+                      className="w-10 h-10 rounded-full object-cover border border-slate-300"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold uppercase text-sm">
+                      {selectedUser.fullName ? selectedUser.fullName[0] : selectedUser.email[0]}
+                    </div>
+                  )}
+
+                  <span 
+                    className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                      selectedUser.isOnline ? 'bg-green-500' : 'bg-slate-400'
+                    }`}
+                  />
                 </div>
-                <span 
-                  className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                    selectedUser.isOnline ? 'bg-green-500' : 'bg-slate-400'
-                  }`}
-                />
+
+                <div className="overflow-hidden">
+                  <h4 className="font-bold text-slate-800 text-sm truncate">{selectedUser.fullName || selectedUser.email}</h4>
+                  <p className="text-xs text-slate-500 capitalize">
+                    {isOtherTyping ? (
+                      <span className="text-blue-600 font-semibold animate-pulse">yozmoqda...</span>
+                    ) : selectedUser.isOnline ? (
+                      <span className="text-green-600 font-semibold">Onlayn</span>
+                    ) : (
+                      'Oflayn'
+                    )}
+                  </p>
+                </div>
               </div>
 
-              <div className="overflow-hidden">
-                <h4 className="font-bold text-slate-800 text-sm truncate">{selectedUser.fullName || selectedUser.email}</h4>
-                <p className="text-xs text-slate-500 capitalize">
-                  {selectedUser.isOnline ? (
-                    <span className="text-green-600 font-semibold">onlayn</span>
-                  ) : (
-                    'oflayn'
-                  )}
-                </p>
+              {/* HEADER MENYU (3 NUQTA) */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
+                  className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition"
+                >
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+
+                {isHeaderMenuOpen && (
+                  <div className="absolute right-0 top-11 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-30 animate-in fade-in zoom-in-95 duration-100">
+                    <button
+                      type="button"
+                      onClick={handleClearChat}
+                      className="w-full px-4 py-2 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 font-medium"
+                    >
+                      <Trash className="w-4 h-4 text-red-500" />
+                      <span>Chatni tozalash</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -482,7 +615,7 @@ export default function Chat() {
                         </div>
                       )}
 
-                      {msg.text && <p className="leading-relaxed break-words pr-5">{msg.text}</p>}
+                      {msg.text && <p className="leading-relaxed break-words pr-2">{msg.text}</p>}
 
                       {msg.audio && (
                         <div className="mt-2 flex items-center gap-2">
@@ -495,21 +628,25 @@ export default function Chat() {
                         </div>
                       )}
 
-                      {/* Tahrirlandi matni va O'qilganlik belgisi (Checkmarks) */}
-                      <div className="flex items-center justify-end gap-1 mt-1 text-[10px]">
+                      <div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] opacity-80">
+                        {msg.createdAt && (
+                          <span className={isMe ? 'text-blue-100' : 'text-slate-400'}>
+                            {formatTime(msg.createdAt)}
+                          </span>
+                        )}
+
                         {msg.isEdited && (
                           <span className={`italic ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
                             (tahrirlandi)
                           </span>
                         )}
 
-                        {/* Faqat o'zim yuborgan xabarlarga galochka chiqadi */}
                         {isMe && (
                           <span title={msg.isRead ? "O'qildi" : "Yuborildi"}>
                             {msg.isRead ? (
-                              <CheckCheck className="w-4 h-4 text-sky-200 inline-block" />
+                              <CheckCheck className="w-3.5 h-3.5 text-sky-200 inline-block" />
                             ) : (
-                              <Check className="w-4 h-4 text-blue-200 inline-block" />
+                              <Check className="w-3.5 h-3.5 text-blue-200 inline-block" />
                             )}
                           </span>
                         )}
@@ -519,6 +656,8 @@ export default function Chat() {
                   </div>
                 );
               })}
+              
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Input Forma */}
@@ -601,7 +740,7 @@ export default function Chat() {
                   <input
                     type="text"
                     value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
+                    onChange={handleInputChange}
                     placeholder={editingMessage ? "Tahrirlang..." : (isRecording ? "Ovoz yozilmoqda..." : "Xabar...")}
                     disabled={isRecording}
                     className="flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
