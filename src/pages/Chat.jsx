@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase/config';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, getDocs, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { useAuthContext } from '../context/AuthContext';
-import { Send, Mic, Square, User, Volume2, Reply, Edit2, Trash2, X, CornerDownRight, MoreVertical, Search } from 'lucide-react';
+import { Send, Mic, Square, User, Volume2, Reply, Edit2, Trash2, X, CornerDownRight, MoreVertical, Search, Image as ImageIcon, Check, CheckCheck } from 'lucide-react';
 
 export default function Chat() {
   const { user } = useAuthContext();
@@ -22,28 +22,79 @@ export default function Chat() {
   const [isRecording, setIsRecording] = useState(false);
   const [audioBase64, setAudioBase64] = useState(null);
   const mediaRecorderRef = useRef(null);
-  const  audioChunksRef = useRef([]);
+  const audioChunksRef = useRef([]);
 
-  // 1. Foydalanuvchilarni yuklash
+  // Rasm uchun state
+  const [imageBase64, setImageBase64] = useState(null);
+  const imageInputRef = useRef(null);
+
+  // 1. ONLAYN / OFLAYN STATUSINI BOSHQARISH
   useEffect(() => {
-    const fetchUsers = async () => {
+    if (!user?.uid) return;
+
+    const userDocRef = doc(db, 'users', user.uid);
+
+    // Onlayn holatga o'tkazish
+    const setOnline = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, 'users'));
-        const usersList = [];
-        querySnapshot.forEach((docSnap) => {
-          if (docSnap.id !== user?.uid) {
-            usersList.push({ id: docSnap.id, ...docSnap.data() });
-          }
+        await updateDoc(userDocRef, {
+          isOnline: true,
+          lastSeen: serverTimestamp()
         });
-        setEmployees(usersList);
       } catch (err) {
-        console.error("Xodimlarni yuklashda xatolik:", err);
+        console.error("Statusni yangilashda xatolik:", err);
       }
     };
-    fetchUsers();
+
+    // Oflayn holatga o'tkazish
+    const setOffline = async () => {
+      try {
+        await updateDoc(userDocRef, {
+          isOnline: false,
+          lastSeen: serverTimestamp()
+        });
+      } catch (err) {
+        console.error("Statusni yangilashda xatolik:", err);
+      }
+    };
+
+    setOnline();
+
+    const handleFocus = () => setOnline();
+    const handleBlur = () => setOffline();
+    const handleUnload = () => setOffline();
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => {
+      setOffline();
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('beforeunload', handleUnload);
+    };
   }, [user]);
 
-  // 2. FAQAT O'QILMAGAN xabarlarni hisoblash
+  // 2. Foydalanuvchilarni real-time (onlayn/oflayn statusi bilan) yuklash
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const q = query(collection(db, 'users'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const usersList = [];
+      snapshot.forEach((docSnap) => {
+        if (docSnap.id !== user?.uid) {
+          usersList.push({ id: docSnap.id, ...docSnap.data() });
+        }
+      });
+      setEmployees(usersList);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // 3. FAQAT O'QILMAGAN xabarlarni hisoblash
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -54,7 +105,6 @@ export default function Chat() {
 
       snapshot.docs.forEach((docSnap) => {
         const data = docSnap.data();
-        // Menga kelgan va hali o'qilmagan (isRead === false) xabarlar
         if (data.receiverId === user.uid && data.isRead === false) {
           const senderId = data.senderId;
           counts[senderId] = (counts[senderId] || 0) + 1;
@@ -77,7 +127,7 @@ export default function Chat() {
     return checkStartsWithWord(emp.fullName) || checkStartsWithWord(emp.email) || checkStartsWithWord(emp.role);
   });
 
-  // 3. Tanlangan chat xabarlarini yuklash va ularni O'QILGAN deb belgilash
+  // 4. Tanlangan chat xabarlarini yuklash va ularni O'QILGAN deb belgilash
   useEffect(() => {
     if (!selectedUser) return;
 
@@ -94,7 +144,6 @@ export default function Chat() {
       );
       setMessages(filtered);
 
-      // Menga kelgan o'qilmagan xabarlarni Firestore'da isRead: true qilib yangilash
       const unreadDocs = snapshot.docs.filter(
         d => d.data().senderId === selectedUser.id && 
              d.data().receiverId === user.uid && 
@@ -120,6 +169,22 @@ export default function Chat() {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  };
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 3 * 1024 * 1024) {
+        alert("Rasm hajmi juda katta! 3MB dan kichik rasm tanlang.");
+        return;
+      }
+      try {
+        const base64 = await blobToBase64(file);
+        setImageBase64(base64);
+      } catch (err) {
+        console.error("Rasmni o'qishda xatolik:", err);
+      }
+    }
   };
 
   const startRecording = async () => {
@@ -171,7 +236,7 @@ export default function Chat() {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if ((!newMessage.trim() && !audioBase64) || !selectedUser) return;
+    if ((!newMessage.trim() && !audioBase64 && !imageBase64) || !selectedUser) return;
 
     if (editingMessage) {
       try {
@@ -188,19 +253,29 @@ export default function Chat() {
     }
 
     try {
+      let replyText = 'Xabar';
+      if (replyTo) {
+        if (replyTo.text) replyText = replyTo.text;
+        else if (replyTo.image) replyText = 'Rasm';
+        else if (replyTo.audio) replyText = 'Ovozli xabar';
+      }
+
       await addDoc(collection(db, 'chats'), {
         senderId: user.uid,
         receiverId: selectedUser.id,
         text: newMessage.trim(),
         audio: audioBase64 || null,
-        replyTo: replyTo ? { id: replyTo.id, text: replyTo.text || 'Ovozli xabar' } : null,
-        isRead: false, // YANGI XABAR HOLATI: O'QILMAGAN
+        image: imageBase64 || null,
+        replyTo: replyTo ? { id: replyTo.id, text: replyText } : null,
+        isRead: false,
         createdAt: serverTimestamp()
       });
 
       setNewMessage('');
       setAudioBase64(null);
+      setImageBase64(null);
       setReplyTo(null);
+      if (imageInputRef.current) imageInputRef.current.value = '';
     } catch (err) {
       alert("Xabar yuborishda xatolik!");
       console.error(err);
@@ -229,6 +304,8 @@ export default function Chat() {
     setEditingMessage(null);
     setNewMessage('');
     setAudioBase64(null);
+    setImageBase64(null);
+    if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
   return (
@@ -272,9 +349,18 @@ export default function Chat() {
                 }`}
               >
                 <div className="flex items-center gap-3 overflow-hidden">
-                  <div className="w-10 h-10 rounded-full bg-slate-300 flex items-center justify-center font-bold text-slate-700 uppercase shrink-0">
-                    {emp.fullName ? emp.fullName[0] : (emp.email ? emp.email[0] : 'U')}
+                  <div className="relative shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-slate-300 flex items-center justify-center font-bold text-slate-700 uppercase">
+                      {emp.fullName ? emp.fullName[0] : (emp.email ? emp.email[0] : 'U')}
+                    </div>
+                    {/* Foydalanuvchining Onlayn/Oflayn indikatori */}
+                    <span 
+                      className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
+                        emp.isOnline ? 'bg-green-500' : 'bg-slate-400'
+                      }`}
+                    />
                   </div>
+
                   <div className="overflow-hidden">
                     <h4 className="font-semibold text-slate-800 text-sm truncate">{emp.fullName || emp.email}</h4>
                     <span className="text-xs px-2 py-0.5 rounded bg-slate-200 text-slate-600 uppercase font-medium">
@@ -283,7 +369,6 @@ export default function Chat() {
                   </div>
                 </div>
 
-                {/* FAQAT O'QILMAGAN XABARLAR BO'LSA SONI CHIQADI */}
                 {unreadCounts[emp.id] > 0 && (
                   <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shrink-0 shadow-sm ml-2 animate-pulse">
                     {unreadCounts[emp.id]}
@@ -299,17 +384,32 @@ export default function Chat() {
       <div className={`flex-1 flex-col bg-slate-100 ${!selectedUser ? 'hidden md:flex' : 'flex'}`}>
         {selectedUser ? (
           <>
+            {/* Header: Chat egasi va onlayn statusi */}
             <div className="p-3 md:p-4 bg-white border-b border-slate-200 flex items-center gap-3">
               <button onClick={() => setSelectedUser(null)} className="md:hidden p-1.5 rounded-lg bg-slate-100 text-slate-600">
                 <X className="w-5 h-5" />
               </button>
               
-              <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold uppercase text-sm shrink-0">
-                {selectedUser.fullName ? selectedUser.fullName[0] : selectedUser.email[0]}
+              <div className="relative shrink-0">
+                <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold uppercase text-sm">
+                  {selectedUser.fullName ? selectedUser.fullName[0] : selectedUser.email[0]}
+                </div>
+                <span 
+                  className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                    selectedUser.isOnline ? 'bg-green-500' : 'bg-slate-400'
+                  }`}
+                />
               </div>
+
               <div className="overflow-hidden">
                 <h4 className="font-bold text-slate-800 text-sm truncate">{selectedUser.fullName || selectedUser.email}</h4>
-                <p className="text-xs text-slate-500 capitalize">{selectedUser.role || 'Xodim'}</p>
+                <p className="text-xs text-slate-500 capitalize">
+                  {selectedUser.isOnline ? (
+                    <span className="text-green-600 font-semibold">onlayn</span>
+                  ) : (
+                    'oflayn'
+                  )}
+                </p>
               </div>
             </div>
 
@@ -360,7 +460,7 @@ export default function Chat() {
                       <MoreVertical className="w-4 h-4" />
                     </button>
 
-                    <div className={`max-w-[82%] sm:max-w-[75%] p-3 rounded-2xl shadow-sm text-sm ${
+                    <div className={`max-w-[82%] sm:max-w-[75%] p-3 rounded-2xl shadow-sm text-sm relative ${
                       isMe ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none'
                     }`}>
                       {msg.replyTo && (
@@ -371,7 +471,18 @@ export default function Chat() {
                         </div>
                       )}
 
-                      {msg.text && <p className="leading-relaxed break-words">{msg.text}</p>}
+                      {msg.image && (
+                        <div className="mb-2 rounded-xl overflow-hidden border border-black/10">
+                          <img 
+                            src={msg.image} 
+                            alt="Yuborilgan rasm" 
+                            className="max-h-60 w-full object-cover cursor-pointer hover:opacity-90 transition"
+                            onClick={() => window.open(msg.image, '_blank')}
+                          />
+                        </div>
+                      )}
+
+                      {msg.text && <p className="leading-relaxed break-words pr-5">{msg.text}</p>}
 
                       {msg.audio && (
                         <div className="mt-2 flex items-center gap-2">
@@ -384,11 +495,26 @@ export default function Chat() {
                         </div>
                       )}
 
-                      {msg.isEdited && (
-                        <span className={`text-[10px] ml-1.5 italic ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
-                          (tahrirlandi)
-                        </span>
-                      )}
+                      {/* Tahrirlandi matni va O'qilganlik belgisi (Checkmarks) */}
+                      <div className="flex items-center justify-end gap-1 mt-1 text-[10px]">
+                        {msg.isEdited && (
+                          <span className={`italic ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
+                            (tahrirlandi)
+                          </span>
+                        )}
+
+                        {/* Faqat o'zim yuborgan xabarlarga galochka chiqadi */}
+                        {isMe && (
+                          <span title={msg.isRead ? "O'qildi" : "Yuborildi"}>
+                            {msg.isRead ? (
+                              <CheckCheck className="w-4 h-4 text-sky-200 inline-block" />
+                            ) : (
+                              <Check className="w-4 h-4 text-blue-200 inline-block" />
+                            )}
+                          </span>
+                        )}
+                      </div>
+
                     </div>
                   </div>
                 );
@@ -403,7 +529,9 @@ export default function Chat() {
                     {replyTo ? <CornerDownRight className="w-4 h-4 text-blue-600 shrink-0" /> : <Edit2 className="w-4 h-4 text-green-600 shrink-0" />}
                     <div className="truncate">
                       <span className="font-semibold text-slate-700">{replyTo ? 'Javob:' : 'Tahrirlash:'}</span>
-                      <p className="text-slate-500 truncate">{replyTo ? (replyTo.text || 'Ovozli xabar') : editingMessage.text}</p>
+                      <p className="text-slate-500 truncate">
+                        {replyTo ? (replyTo.text || (replyTo.image ? 'Rasm' : 'Ovozli xabar')) : editingMessage.text}
+                      </p>
                     </div>
                   </div>
                   <button type="button" onClick={cancelAction} className="p-1 hover:bg-slate-200 rounded-full text-slate-500">
@@ -412,12 +540,43 @@ export default function Chat() {
                 </div>
               )}
 
+              {imageBase64 && (
+                <div className="flex items-center justify-between mb-2 p-2 bg-slate-100 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <img src={imageBase64} alt="Preview" className="w-12 h-12 object-cover rounded-lg border border-slate-300" />
+                    <span className="text-xs text-slate-600 font-medium">Rasm biriktirildi</span>
+                  </div>
+                  <button type="button" onClick={() => setImageBase64(null)} className="p-1 hover:bg-slate-200 rounded-full text-slate-500">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               <form onSubmit={handleSendMessage} className="flex items-center gap-1.5 sm:gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={imageInputRef}
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={isRecording || Boolean(editingMessage)}
+                  className="p-2 sm:p-2.5 rounded-full bg-slate-100 text-slate-600 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 transition shrink-0"
+                  title="Rasm yuklash"
+                >
+                  <ImageIcon className="w-5 h-5" />
+                </button>
+
                 {!isRecording ? (
                   <button
                     type="button"
                     onClick={startRecording}
-                    className="p-2 sm:p-2.5 rounded-full bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600 transition shrink-0"
+                    disabled={Boolean(editingMessage)}
+                    className="p-2 sm:p-2.5 rounded-full bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 transition shrink-0"
                   >
                     <Mic className="w-5 h-5" />
                   </button>
