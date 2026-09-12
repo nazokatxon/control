@@ -23,6 +23,7 @@ export default function ManageUsers() {
   const [loginInput, setLoginInput] = useState('');
   const [password, setPassword] = useState('');
   const [workplace, setWorkplace] = useState('');
+  const [mahalla, setMahalla] = useState(''); // Mahalla uchun state
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -61,6 +62,7 @@ export default function ManageUsers() {
         email: fullEmail,
         role: 'xodim',
         workplace: workplace.trim(),
+        mahalla: mahalla.trim(), // Firestore ga saqlash
         tempPassword: password,
         createdAt: serverTimestamp()
       });
@@ -70,6 +72,7 @@ export default function ManageUsers() {
       setLoginInput('');
       setPassword('');
       setWorkplace('');
+      setMahalla('');
       fetchUsers();
     } catch (err) {
       console.error("Xodim qo'shishda xatolik:", err);
@@ -123,6 +126,18 @@ export default function ManageUsers() {
               />
             </div>
 
+            {/* Mahalla / Hudud inputi */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Mahalla / Hudud</label>
+              <input
+                type="text"
+                value={mahalla}
+                onChange={(e) => setMahalla(e.target.value)}
+                placeholder="Masalan: Navro'z MFY"
+                className="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Login</label>
               <input
@@ -170,6 +185,7 @@ export default function ManageUsers() {
                 <tr>
                   <th className="p-3">Xodim</th>
                   <th className="p-3">Bo'lim</th>
+                  <th className="p-3">Mahalla</th>
                   <th className="p-3">Login (Email)</th>
                   <th className="p-3">Paroli</th>
                 </tr>
@@ -180,6 +196,7 @@ export default function ManageUsers() {
                     <tr key={usr.id} className="hover:bg-slate-50">
                       <td className="p-3 font-medium text-slate-800">{usr.fullName || '—'}</td>
                       <td className="p-3">{usr.workplace || '—'}</td>
+                      <td className="p-3">{usr.mahalla || '—'}</td>
                       <td className="p-3 text-blue-600 font-mono text-xs">{usr.email}</td>
                       <td className="p-3 font-mono text-xs bg-slate-100 rounded text-slate-800 font-bold px-2 py-1 w-fit">
                         {usr.tempPassword || '******'}
@@ -188,7 +205,7 @@ export default function ManageUsers() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="p-4 text-center text-slate-400">Xodimlar topilmadi.</td>
+                    <td colSpan={5} className="p-4 text-center text-slate-400">Xodimlar topilmadi.</td>
                   </tr>
                 )}
               </tbody>

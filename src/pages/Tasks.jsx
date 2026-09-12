@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { getAllTasks, getEmployeeTasks, updateTaskStatus, uploadTaskReport } from "../services/taskService";
 import { useAuth } from "../hooks/useAuth";
-import { Paperclip, PlayCircle, Upload } from "lucide-react";
+import { Paperclip, PlayCircle, CheckCircle } from "lucide-react";
 
 export default function Tasks() {
   const { user, userRole } = useAuth();
@@ -13,7 +13,7 @@ export default function Tasks() {
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [uploadingId, setUploadingId] = useState(null);
+  const [updatingId, setUpdatingId] = useState(null);
   const [activeFilter, setActiveFilter] = useState(currentStatusParam);
 
   const isManager = userRole === "hokim" || userRole === "admin" || userRole === "yordamchi";
@@ -44,29 +44,17 @@ export default function Tasks() {
     }
   };
 
-  // Statusni o'zgartirish
+  // Statusni o'zgartirish (Bajarildi yoki Jarayonda qilish)
   const handleStatusUpdate = async (taskId, newStatus) => {
     try {
+      setUpdatingId(taskId);
       await updateTaskStatus(taskId, newStatus);
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
     } catch (err) {
       console.error("Statusni yangilashda xatolik:", err);
-    }
-  };
-
-  // Fayl / Hisobot yuklash
-  const handleFileUpload = async (taskId, e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    try {
-      setUploadingId(taskId);
-      const fileUrl = await uploadTaskReport(taskId, file);
-      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, fileUrl, status: "completed" } : t));
-    } catch (err) {
-      console.error("Fayl yuklashda xatolik:", err);
+      alert("Statusni yangilashda xatolik yuz berdi");
     } finally {
-      setUploadingId(null);
+      setUpdatingId(null);
     }
   };
 
@@ -196,29 +184,29 @@ export default function Tasks() {
                 </div>
               </div>
 
-              {/* XODIM UCHUN STATUS VA FAYL BIRIKTIRISH TEZKOR AMALLARI */}
+              {/* XODIM UCHUN TEZKOR AMALLAR */}
               <div className="space-y-2 pt-2 border-t border-slate-100">
-                {!isManager && task.status !== "completed" && task.status !== "COMPLETED" && (
+                {!isManager && task.status !== "completed" && task.status !== "COMPLETED" && task.status !== "bajarildi" && (
                   <div className="flex items-center gap-2">
-                    {task.status !== "in_progress" && task.status !== "IN_PROGRESS" && (
+                    {task.status !== "in_progress" && task.status !== "IN_PROGRESS" && task.status !== "jarayonda" && (
                       <button
                         onClick={() => handleStatusUpdate(task.id, "in_progress")}
-                        className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition"
+                        disabled={updatingId === task.id}
+                        className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition disabled:opacity-50"
                       >
                         <PlayCircle className="w-3.5 h-3.5" /> Boshlash
                       </button>
                     )}
 
-                    <label className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>{uploadingId === task.id ? "Yuklanmoqda..." : "Fayl / Hisobot"}</span>
-                      <input
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => handleFileUpload(task.id, e)}
-                        disabled={uploadingId === task.id}
-                      />
-                    </label>
+                    {/* Rasm/Fayl so'ramasdan to'g'ridan-to'g'ri statusni "completed" qilish tugmasi */}
+                    <button
+                      onClick={() => handleStatusUpdate(task.id, "completed")}
+                      disabled={updatingId === task.id}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition disabled:opacity-50"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>{updatingId === task.id ? "Saqlanmoqda..." : "Bajarildi"}</span>
+                    </button>
                   </div>
                 )}
 
