@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { getAllTasks, getEmployeeTasks, updateTaskStatus, uploadTaskReport } from "../services/taskService";
+import { getAllTasks, getEmployeeTasks, updateTaskStatus } from "../services/taskService";
+import { db } from "../firebase/config";
+import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
-import { Paperclip, PlayCircle, CheckCircle } from "lucide-react";
+import { Paperclip, PlayCircle, CheckCircle, Eye } from "lucide-react";
 
 export default function Tasks() {
   const { user, userRole } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // URL'dan kelgan status bo'yicha boshlang'ich filterni aniqlash
   const currentStatusParam = searchParams.get("status") || "all";
 
   const [tasks, setTasks] = useState([]);
@@ -17,12 +18,12 @@ export default function Tasks() {
   const [activeFilter, setActiveFilter] = useState(currentStatusParam);
 
   const isManager = userRole === "hokim" || userRole === "admin" || userRole === "yordamchi";
+  const isHokim = userRole === "hokim" || userRole === "admin";
 
   useEffect(() => {
     fetchTasks();
   }, [user, userRole]);
 
-  // URL'dagi status parametr o'zgarganda activeFilter'ni yangilash
   useEffect(() => {
     setActiveFilter(searchParams.get("status") || "all");
   }, [searchParams]);
@@ -44,7 +45,6 @@ export default function Tasks() {
     }
   };
 
-  // Statusni o'zgartirish (Bajarildi yoki Jarayonda qilish)
   const handleStatusUpdate = async (taskId, newStatus) => {
     try {
       setUpdatingId(taskId);
@@ -58,12 +58,49 @@ export default function Tasks() {
     }
   };
 
+  // Hokim "Ko'rish" ni bosganda holatni "Ko'rildi" qilish va 0.5 ball qo'shish
+  const handleHokimView = async (task) => {
+    // Agar allaqachon ko'rilgan bo'lsa, qayta bajarilmaydi
+    if (task.status === "ko'rildi" || task.status === "viewed") return;
+
+    try {
+      setUpdatingId(task.id);
+      const taskRef = doc(db, "tasks", task.id);
+      
+      // 1. Vazifa statusini "ko'rildi" ga o'zgartirish
+      await updateDoc(taskRef, { status: "ko'rildi" });
+
+      // 2. Agar xodimga biriktirilgan bo'lsa, uning baliga 0.5 qo'shish
+      if (task.assignedTo) {
+        const userRef = doc(db, "users", task.assignedTo);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+          // Ball mavjud bo'lmasa 0 dan boshlab increment qilamiz
+          const currentPoints = userSnap.data().points || 0;
+          await updateDoc(userRef, { points: currentPoints + 0.5 });
+        }
+      }
+
+      // Local state'ni yangilash
+      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: "ko'rildi" } : t));
+    } catch (err) {
+      console.error("Ko'rildi qilishda xatolik:", err);
+      alert("Xatolik yuz berdi");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const getStatusBadge = (status) => {
     const st = status?.toLowerCase();
     switch (st) {
       case "completed":
       case "bajarildi":
         return <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-semibold">🟢 Bajarildi</span>;
+      case "ko'rildi":
+      case "viewed":
+        return <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-semibold">👁️ Ko'rildi</span>;
       case "in_progress":
       case "jarayonda":
       case "pending":
@@ -77,7 +114,6 @@ export default function Tasks() {
     }
   };
 
-  // Tanlangan tab/filter bo'yicha ro'yxatni saralash
   const filteredTasks = tasks.filter((task) => {
     const st = task.status?.toLowerCase() || "";
     if (activeFilter === "all") return true;
@@ -85,7 +121,7 @@ export default function Tasks() {
       return st === "in_progress" || st === "jarayonda" || st === "pending" || st === "kutilmoqda";
     }
     if (activeFilter === "completed") {
-      return st === "completed" || st === "bajarildi";
+      return st === "completed" || st === "bajarildi" || st === "ko'rildi" || st === "viewed";
     }
     if (activeFilter === "overdue") {
       return st === "overdue" || st === "kechikmoqda";
@@ -160,65 +196,86 @@ export default function Tasks() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredTasks.map((task) => (
-            <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between space-y-4 hover:shadow-md transition">
-              <div>
-                <div className="flex justify-between items-start gap-2 mb-3">
-                  <h3 className="font-bold text-slate-800 text-base leading-snug">{task.title}</h3>
-                  {getStatusBadge(task.status)}
+          {filteredTasks.map((task) => {
+            const isCompletedByEmployee = task.status === "completed" || task.status === "COMPLETED" || task.status === "bajarildi";
+            const isAlreadyViewed = task.status === "ko'rildi" || task.status === "viewed";
+
+            return (
+              <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between space-y-4 hover:shadow-md transition">
+                <div>
+                  <div className="flex justify-between items-start gap-2 mb-3">
+                    <h3 className="font-bold text-slate-800 text-base leading-snug">{task.title}</h3>
+                    {getStatusBadge(task.status)}
+                  </div>
+
+                  <p className="text-slate-600 text-xs sm:text-sm mb-4 line-clamp-3">{task.description || task.batafsil}</p>
+
+                  <div className="bg-slate-50 p-3 rounded-xl text-xs text-slate-600 space-y-1.5 mb-2">
+                    <p><strong className="text-slate-800">📍 Mahalla:</strong> {task.mahalla || "Kiritilmagan"}</p>
+                    <p><strong className="text-slate-800">📅 Muddat:</strong> {task.deadline || task.muddati}</p>
+                    {task.fileUrl && (
+                      <p className="flex items-center gap-1 text-blue-600 font-medium pt-1">
+                        <Paperclip className="w-3.5 h-3.5" />
+                        <a href={task.fileUrl} target="_blank" rel="noreferrer" className="underline hover:text-blue-800">
+                          Biriktirilgan faylni ko'rish
+                        </a>
+                      </p>
+                    )}
+                  </div>
                 </div>
 
-                <p className="text-slate-600 text-xs sm:text-sm mb-4 line-clamp-3">{task.description || task.batafsil}</p>
+                {/* AMALLAR QISMI */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  {/* XODIM UCHUN */}
+                  {!isManager && task.status !== "completed" && task.status !== "COMPLETED" && task.status !== "bajarildi" && !isAlreadyViewed && (
+                    <div className="flex items-center gap-2">
+                      {task.status !== "in_progress" && task.status !== "IN_PROGRESS" && task.status !== "jarayonda" && (
+                        <button
+                          onClick={() => handleStatusUpdate(task.id, "in_progress")}
+                          disabled={updatingId === task.id}
+                          className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition disabled:opacity-50"
+                        >
+                          <PlayCircle className="w-3.5 h-3.5" /> Boshlash
+                        </button>
+                      )}
 
-                <div className="bg-slate-50 p-3 rounded-xl text-xs text-slate-600 space-y-1.5 mb-2">
-                  <p><strong className="text-slate-800">📍 Mahalla:</strong> {task.mahalla || "Kiritilmagan"}</p>
-                  <p><strong className="text-slate-800">📅 Muddat:</strong> {task.deadline || task.muddati}</p>
-                  {task.fileUrl && (
-                    <p className="flex items-center gap-1 text-blue-600 font-medium pt-1">
-                      <Paperclip className="w-3.5 h-3.5" />
-                      <a href={task.fileUrl} target="_blank" rel="noreferrer" className="underline hover:text-blue-800">
-                        Biriktirilgan faylni ko'rish
-                      </a>
-                    </p>
+                      <button
+                        onClick={() => handleStatusUpdate(task.id, "completed")}
+                        disabled={updatingId === task.id}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition disabled:opacity-50"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        <span>{updatingId === task.id ? "Saqlanmoqda..." : "Bajarildi"}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* HOKIM UCHUN: Agar xodim bajarib qo'ygan bo'lsa, "Ko'rish" tugmasi chiqadi */}
+                  {isHokim && isCompletedByEmployee ? (
+                    <button
+                      onClick={() => handleHokimView(task)}
+                      disabled={updatingId === task.id}
+                      className="w-full flex items-center justify-center gap-1 text-xs font-semibold text-white bg-blue-600 py-2.5 rounded-xl hover:bg-blue-700 transition shadow-sm disabled:opacity-50"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span>{updatingId === task.id ? "Yuklanmoqda..." : "Ko'rish"}</span>
+                    </button>
+                  ) : isHokim && isAlreadyViewed ? (
+                    <div className="text-center text-xs font-semibold text-emerald-600 bg-emerald-50 py-2 rounded-xl">
+                      ✓ Ko'rildi (0.5 ball berildi)
+                    </div>
+                  ) : (
+                    <Link
+                      to={`/tasks/${task.id}`}
+                      className="block text-center text-xs font-semibold text-slate-700 bg-slate-100 py-2 rounded-xl hover:bg-slate-200 transition"
+                    >
+                      Batafsil Ko'rish →
+                    </Link>
                   )}
                 </div>
               </div>
-
-              {/* XODIM UCHUN TEZKOR AMALLAR */}
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                {!isManager && task.status !== "completed" && task.status !== "COMPLETED" && task.status !== "bajarildi" && (
-                  <div className="flex items-center gap-2">
-                    {task.status !== "in_progress" && task.status !== "IN_PROGRESS" && task.status !== "jarayonda" && (
-                      <button
-                        onClick={() => handleStatusUpdate(task.id, "in_progress")}
-                        disabled={updatingId === task.id}
-                        className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition disabled:opacity-50"
-                      >
-                        <PlayCircle className="w-3.5 h-3.5" /> Boshlash
-                      </button>
-                    )}
-
-                    {/* Rasm/Fayl so'ramasdan to'g'ridan-to'g'ri statusni "completed" qilish tugmasi */}
-                    <button
-                      onClick={() => handleStatusUpdate(task.id, "completed")}
-                      disabled={updatingId === task.id}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 transition disabled:opacity-50"
-                    >
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      <span>{updatingId === task.id ? "Saqlanmoqda..." : "Bajarildi"}</span>
-                    </button>
-                  </div>
-                )}
-
-                <Link
-                  to={`/tasks/${task.id}`}
-                  className="block text-center text-xs font-semibold text-slate-700 bg-slate-100 py-2 rounded-xl hover:bg-slate-200 transition"
-                >
-                  Batafsil Ko'rish →
-                </Link>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

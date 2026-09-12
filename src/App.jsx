@@ -8,12 +8,16 @@ import CreateTask from './pages/CreateTask';
 import ManageUsers from './pages/ManageUsers';
 import TaskDetails from './pages/TaskDetails';
 import Chat from './pages/Chat'; 
+import Profile from './pages/Profile';
+import Xodimlar from './pages/Xodimlar'; 
+import HokimEmployees from "./pages/HokimEmployees";
+import Uchrashuvlar from './pages/Uchrashuvlar';
 import EmployeeControl from './pages/EmployeeControl';
 import AssistantDashboard from './pages/AssistantDashboard';
 import AddEmployee from './pages/AddEmployee';
 import Navbar from './components/layout/Navbar';
 
-// 1. Himoyalangan Marshrut (Faqat tizimga kirganlar va roli mos keladiganlar uchun)
+// 1. Himoyalangan Marshrut
 function ProtectedRoute({ allowedRoles }) {
   const { user, userRole, loading } = useAuthContext();
 
@@ -25,12 +29,10 @@ function ProtectedRoute({ allowedRoles }) {
     );
   }
 
-  // Tizimga kirilmagan bo'lsa, login sahifasiga yo'naltiradi
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  // Rol mos kelmasa, umumiy dashboard'ga qaytaradi
   if (allowedRoles && !allowedRoles.includes(userRole)) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -38,7 +40,7 @@ function ProtectedRoute({ allowedRoles }) {
   return <Outlet />;
 }
 
-// 2. Ochiq Marshrut (Tizimga kirgan foydalanuvchini qayta login sahifasiga o'tkazmaydi)
+// 2. Ochiq Marshrut
 function PublicRoute() {
   const { user, loading } = useAuthContext();
 
@@ -59,24 +61,31 @@ function PublicRoute() {
 
 // 3. Asosiy App Layout
 function MainLayout() {
-  const { user } = useAuthContext();
+  const { user, userRole } = useAuthContext(); // userRole shu yerda olindi
 
   return (
     <div className="min-h-screen bg-slate-100">
       {user && <Navbar />}
       <div className="container mx-auto px-4 py-6">
         <Routes>
-          {/* Ochiq yo'llar (Faqat tizimga kirmaganlar uchun) */}
+          {/* Ochiq yo'llar */}
           <Route element={<PublicRoute />}>
             <Route path="/login" element={<Login />} />
           </Route>
 
-          {/* Barcha avtorizatsiyadan o'tgan xodimlar uchun */}
+          {/* Barcha avtorizatsiyadan o'tganlar uchun */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/tasks/:id" element={<TaskDetails />} />
             <Route path="/chat" element={<Chat />} />
+            <Route path="/meetings" element={<Uchrashuvlar />} />
+            
+            {/* Hokim kelsa HokimEmployees (reyting), qolganlarga ManageUsers ochiladi */}
+            <Route 
+              path="/users/manage" 
+              element={userRole === 'hokim' ? <HokimEmployees /> : <ManageUsers />} 
+            />
           </Route>
 
           {/* Maxsus rollar uchun (Hokim, Yordamchi, Admin) */}
@@ -85,11 +94,9 @@ function MainLayout() {
             <Route path="/employees" element={<EmployeeControl />} />
             <Route path="/add-employee" element={<AddEmployee />} />
             <Route path="/tasks/create" element={<CreateTask />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/xodimlar" element={<Xodimlar />} />
           </Route>
-          {/* Yordamchi va Hokim xodimlarni boshqara oladi */}
-<Route element={<ProtectedRoute allowedRoles={['yordamchi', 'hokim', 'admin']} />}>
-  <Route path="/users/manage" element={<ManageUsers />} />
-</Route>
 
           {/* Noma'lum linklar kiritilganda */}
           <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />

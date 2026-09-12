@@ -77,9 +77,10 @@ export default function Dashboard() {
     return st === 'in_progress' || st === 'jarayonda' || st === 'pending' || st === 'kutilmoqda';
   }).length;
 
+  // TO'G'RILANDI: "ko'rildi" va "viewed" statuslari ham bajarilganlar qatoriga qo'shildi
   const completedCount = tasks.filter((task) => {
     const st = task.status?.toLowerCase();
-    return st === 'completed' || st === 'bajarildi';
+    return st === 'completed' || st === 'bajarildi' || st === "ko'rildi" || st === 'viewed';
   }).length;
 
   const overdueCount = tasks.filter((task) => {

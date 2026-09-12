@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { db } from '../firebase/config';
 import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { useAuthContext } from '../context/AuthContext';
-import { Send, CheckCircle, AlertCircle } from 'lucide-react';
-import Select from 'react-select'; // react-select import qilindi
+import { Send, CheckCircle, AlertCircle, Mic, MicOff } from 'lucide-react';
+import Select from 'react-select';
 
 export default function CreateTask() {
   const { user, userData } = useAuthContext();
@@ -14,8 +14,10 @@ export default function CreateTask() {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  
+  // Qaysi biri tinglanayotganini bilish uchun ('title' yoki 'description')
+  const [activeField, setActiveField] = useState(null);
 
-  // Firestore'dan xodimlar ro'yxatini yuklash
   useEffect(() => {
     const fetchEmployees = async () => {
       try {
@@ -33,11 +35,58 @@ export default function CreateTask() {
     fetchEmployees();
   }, []);
 
-  // Xodimlarni react-select uchun { value, label } formatiga o'tkazish
   const employeeOptions = employees.map((emp) => ({
     value: emp.id,
     label: `${emp.fullName || emp.email} ${emp.workplace ? `(${emp.workplace})` : ''}`
   }));
+
+  // Ovozli yozish funksiyasi (universal: title yoki description uchun)
+  const handleVoiceInput = (field) => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      alert("Sizning brauzeringiz ovozli kiritishni qo'llab-quvvatlamaydi. Iltimos, Google Chrome dan foydalaning.");
+      return;
+    }
+
+    if (activeField === field) {
+      setActiveField(null);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'uz-UZ'; 
+    recognition.interimResults = true; 
+    recognition.continuous = true; 
+
+    recognition.onstart = () => {
+      setActiveField(field);
+    };
+
+    recognition.onresult = (event) => {
+      let transcript = '';
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+
+      if (field === 'title') {
+        setTitle(transcript);
+      } else if (field === 'description') {
+        setDescription(transcript);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Ovozni aniqlashda xatolik:", event.error);
+      setActiveField(null);
+    };
+
+    recognition.onend = () => {
+      setActiveField(null);
+    };
+
+    recognition.start();
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -91,8 +140,30 @@ export default function CreateTask() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Topshiriq Nomi */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Topshiriq Nomi</label>
+          <div className="flex justify-between items-center mb-1">
+            <label className="block text-sm font-medium text-slate-700">Topshiriq Nomi</label>
+            <button
+              type="button"
+              onClick={() => handleVoiceInput('title')}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-xl font-semibold transition ${
+                activeField === 'title' 
+                  ? 'bg-rose-500 text-white animate-pulse' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              {activeField === 'title' ? (
+                <>
+                  <MicOff className="w-3.5 h-3.5" /> Tinglanmoqda...
+                </>
+              ) : (
+                <>
+                  <Mic className="w-3.5 h-3.5 text-blue-600" /> Ovoz bilan yozish
+                </>
+              )}
+            </button>
+          </div>
           <input
             type="text"
             required
@@ -103,6 +174,7 @@ export default function CreateTask() {
           />
         </div>
 
+        {/* Mas'ul Xodim */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Mas'ul Xodim</label>
           <Select
@@ -117,8 +189,8 @@ export default function CreateTask() {
             styles={{
               control: (base, state) => ({
                 ...base,
-                borderRadius: '0.75rem', // rounded-xl
-                borderColor: state.isFocused ? '#3b82f6' : '#cbd5e1', // focus va oddiy holat
+                borderRadius: '0.75rem',
+                borderColor: state.isFocused ? '#3b82f6' : '#cbd5e1',
                 padding: '2px',
                 boxShadow: state.isFocused ? '0 0 0 2px rgba(59, 130, 246, 0.5)' : 'none',
                 '&:hover': {
@@ -129,8 +201,30 @@ export default function CreateTask() {
           />
         </div>
 
+        {/* Topshiriq Mazmuni */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Topshiriq Mazmuni</label>
+          <div className="flex justify-between items-center mb-1">
+            <label className="block text-sm font-medium text-slate-700">Topshiriq Mazmuni</label>
+            <button
+              type="button"
+              onClick={() => handleVoiceInput('description')}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-xl font-semibold transition ${
+                activeField === 'description' 
+                  ? 'bg-rose-500 text-white animate-pulse' 
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              {activeField === 'description' ? (
+                <>
+                  <MicOff className="w-3.5 h-3.5" /> Tinglanmoqda...
+                </>
+              ) : (
+                <>
+                  <Mic className="w-3.5 h-3.5 text-blue-600" /> Ovoz bilan yozish
+                </>
+              )}
+            </button>
+          </div>
           <textarea
             rows={4}
             required
@@ -141,6 +235,7 @@ export default function CreateTask() {
           />
         </div>
 
+        {/* Bajarilish Muddat */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Bajarilish Muddat (Deadline)</label>
           <input
