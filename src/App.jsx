@@ -73,7 +73,7 @@ function MainLayout() {
           <Route element={<PublicRoute />}>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-        </Route>
+          </Route>
 
           {/* Barcha avtorizatsiyadan o'tganlar uchun */}
           <Route element={<ProtectedRoute />}>
@@ -82,6 +82,7 @@ function MainLayout() {
             <Route path="/tasks/:id" element={<TaskDetails />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/meetings" element={<Uchrashuvlar />} />
+            <Route path="/profile" element={<Profile />} />
             
             {/* Hokim kelsa HokimEmployees (reyting), qolganlarga ManageUsers ochiladi */}
             <Route 
@@ -96,7 +97,6 @@ function MainLayout() {
             <Route path="/employees" element={<EmployeeControl />} />
             <Route path="/add-employee" element={<AddEmployee />} />
             <Route path="/tasks/create" element={<CreateTask />} />
-            <Route path="/profile" element={<Profile />} />
             <Route path="/xodimlar" element={<Xodimlar />} />
           </Route>
 
