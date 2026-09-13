@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/config';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { Users, CheckCircle, XCircle, Trophy, Award, RotateCcw, Star, Search, Send } from 'lucide-react';
+import { Users, CheckCircle, XCircle, Trophy, Award, RotateCcw, Star, Search, ArrowLeft } from 'lucide-react';
 
 export default function Xodimlar() {
+  const navigate = useNavigate();
   const [employees, setEmployees] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -112,6 +114,19 @@ export default function Xodimlar() {
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-6 pb-24 md:pb-6">
+      
+      {/* ORQAGA QAYTISH TUGMASI */}
+      <div>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Orqaga</span>
+        </button>
+      </div>
+
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800 dark:text-white">

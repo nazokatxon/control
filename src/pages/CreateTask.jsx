@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/config';
 import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { useAuthContext } from '../context/AuthContext';
-import { Send, CheckCircle, AlertCircle, Mic, MicOff, Phone } from 'lucide-react';
+import { Send, CheckCircle, AlertCircle, Mic, MicOff, Phone, ArrowLeft } from 'lucide-react';
 import Select from 'react-select';
 
 export default function CreateTask() {
+  const navigate = useNavigate();
   const { user, userData } = useAuthContext();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -129,8 +131,21 @@ export default function CreateTask() {
   const selectedEmployee = employeeOptions.find(opt => opt.value === assignedTo);
 
   return (
-    <div className="max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow-md border border-slate-200">
-      <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+    <div className="max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow-md border border-slate-200 my-4 space-y-4">
+      
+      {/* ORQAGA QAYTISH TUGMASI */}
+      <div>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Orqaga</span>
+        </button>
+      </div>
+
+      <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
         <Send className="w-6 h-6 text-blue-600" /> Yangi Topshiriq Yuborish
       </h2>
 

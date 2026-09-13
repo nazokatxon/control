@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/config';
 import { collection, addDoc, getDocs, deleteDoc, doc, serverTimestamp, query, orderBy } from 'firebase/firestore';
-import { Calendar as CalendarIcon, Clock, User, Plus, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, Plus, Trash2, ArrowLeft } from 'lucide-react';
 
 export default function Uchrashuvlar() {
+  const navigate = useNavigate();
   const [meetings, setMeetings] = useState([]);
   const [person, setPerson] = useState('');
   const [dateTime, setDateTime] = useState('');
@@ -57,6 +59,19 @@ export default function Uchrashuvlar() {
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-6 pb-24 md:pb-6">
+      
+      {/* ORQAGA QAYTISH TUGMASI */}
+      <div>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Orqaga</span>
+        </button>
+      </div>
+
       <div>
         <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800 dark:text-white">
           <CalendarIcon className="w-6 h-6 text-blue-600" />
