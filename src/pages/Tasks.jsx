@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { getAllTasks, getEmployeeTasks, updateTaskStatus } from "../services/taskService";
 import { db } from "../firebase/config";
 import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
-import { Paperclip, PlayCircle, CheckCircle, Eye } from "lucide-react";
+import { Paperclip, PlayCircle, CheckCircle, Eye, ArrowLeft } from "lucide-react";
 
 export default function Tasks() {
+  const navigate = useNavigate();
   const { user, userRole } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   
@@ -138,6 +139,19 @@ export default function Tasks() {
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      
+      {/* ORQAGA QAYTISH TUGMASI */}
+      <div>
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Orqaga</span>
+        </button>
+      </div>
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Topshiriqlar Ro'yxati</h1>
