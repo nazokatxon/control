@@ -12,10 +12,12 @@ export default function AssistantDashboard() {
   // Xodimlar va Topshiriqlarni yuklash
   const fetchData = async () => {
     try {
-      // 1. Xodimlarni olish
+      // 1. Xodimlarni olish va nofaol/inactive holatidagilarni filtrlab tashlash
       const usersSnap = await getDocs(collection(db, 'users'));
       const empList = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setEmployees(empList);
+      
+      const activeEmployees = empList.filter(emp => emp.status !== 'nofaol' && emp.status !== 'inactive');
+      setEmployees(activeEmployees);
 
       // 2. Topshiriqlarni olish
       const tasksSnap = await getDocs(collection(db, 'tasks'));
