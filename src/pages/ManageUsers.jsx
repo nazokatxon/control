@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { db } from '../firebase/config';
 import { collection, getDocs, doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, updatePassword, updateEmail } from 'firebase/auth';
 import { UserPlus, Users, CheckCircle, AlertCircle, Edit, UserCheck, UserX, XCircle, Building2, MapPin, KeyRound, Mail, Phone } from 'lucide-react';
 
 const firebaseConfig = {
@@ -79,7 +79,25 @@ export default function ManageUsers() {
 
     try {
       if (editingUser) {
-        // Tahrirlash jarayoni: Firestore'dagi ma'lumotlarni yangilaymiz
+        // 1. Firebase Auth da parolni va emailni yangilash uchun avval eski ma'lumotlar bilan kiramiz
+        const userCredential = await signInWithEmailAndPassword(
+          secondaryAuth, 
+          editingUser.email, 
+          editingUser.tempPassword || ''
+        );
+        const authUser = userCredential.user;
+
+        // 2. Agar parol o'zgargan bo'lsa, Auth da yangilaymiz
+        if (password !== editingUser.tempPassword) {
+          await updatePassword(authUser, password);
+        }
+
+        // 3. Agar email o'zgargan bo'lsa, Auth da ham yangilaymiz
+        if (editingUser.email !== fullEmail) {
+          await updateEmail(authUser, fullEmail);
+        }
+
+        // 4. Firestore'dagi ma'lumotlarni yangilaymiz
         const userRef = doc(db, 'users', editingUser.id);
         await updateDoc(userRef, {
           fullName: fullName.trim(),
@@ -90,7 +108,7 @@ export default function ManageUsers() {
           tempPassword: password
         });
 
-        setMessage({ type: 'success', text: "Xodim ma'lumotlari yangilandi!" });
+        setMessage({ type: 'success', text: "Xodim ma'lumotlari va paroli muvaffaqiyatli yangilandi!" });
         resetForm();
         fetchUsers();
 
@@ -118,7 +136,15 @@ export default function ManageUsers() {
       }
     } catch (err) {
       console.error("Xatolik:", err);
-      setMessage({ type: 'error', text: "Xatolik: " + err.message });
+      let errorText = err.message;
+      if (err.code === 'auth/email-already-in-use') {
+        errorText = "Bu login (email) allaqachon mavjud!";
+      } else if (err.code === 'auth/weak-password') {
+        errorText = "Parol juda sodda (kamida 6 ta belgi bo'lishi kerak).";
+      } else if (err.code === 'auth/invalid-credential') {
+        errorText = "Eski parol yoki login noto'g'ri ko'rsatilgan.";
+      }
+      setMessage({ type: 'error', text: "Xatolik: " + errorText });
     } finally {
       setLoading(false);
     }

@@ -18,20 +18,28 @@ export default function Login() {
     setLoading(true);
     setError('');
 
-    // Kiritilgan loginda @ bo'lmasa, avtomatik @tuman.uz qo'shiladi
-    const cleanInput = username.trim();
+    // Ortiqcha bo'shliqlarni olib tashlaymiz va kichik harflarga o'tkazamiz
+    const cleanInput = username.trim().toLowerCase();
     const fullEmail = cleanInput.includes('@') ? cleanInput : `${cleanInput}@tuman.uz`;
 
     try {
-      // 1. Firebase Auth SDK orqali tizimga kirish
+      // 1. Firebase Auth orqali tizimga kirish
       const userCredential = await signInWithEmailAndPassword(auth, fullEmail, password);
       const user = userCredential.user;
 
-      // 2. Firestore 'users' kolleksiyasidan foydalanuvchi hujjatini tekshirish
+      // 2. Firestore 'users' kolleksiyasidan foydalanuvchi ma'lumotlarini tekshirish
       const userDoc = await getDoc(doc(db, 'users', user.uid));
 
       if (userDoc.exists()) {
         const userData = userDoc.data();
+        
+        // Agar xodim nofaol (inactive) qilingan bo'lsa
+        if (userData.status === 'inactive') {
+          setError("Sizning hisobingiz bloklangan yoki nofaol holatda!");
+          setLoading(false);
+          return;
+        }
+
         if (userData.role === 'yordamchi' || userData.role === 'orinbosar') {
           navigate('/yordamchi', { replace: true });
         } else {
@@ -43,17 +51,19 @@ export default function Login() {
     } catch (err) {
       console.error("Login xatosi:", err);
       
-      // Xatolik turlarini aniq ko'rsatish
+      // Xatolik turiga qarab tushunarli matn chiqarish
       if (
         err.code === 'auth/user-not-found' || 
         err.code === 'auth/wrong-password' || 
         err.code === 'auth/invalid-credential'
       ) {
-        setError("Login yoki parol noto'g'ri!");
+        setError(`Kiritilgan login yoki parol noto'g'ri! (Tekshirilgan email: ${fullEmail})`);
       } else if (err.code === 'auth/too-many-requests') {
-        setError("Noma'lum harakatlar ko'p bo'ldi. Birozdan so'ng qayta urinib ko'ring!");
+        setError("Urinishlar soni ko'payib ketdi. Birozdan so'ng qayta urinib ko'ring!");
+      } else if (err.code === 'auth/invalid-email') {
+        setError("Login (email) formati noto'g'ri ko'rsatilgan.");
       } else {
-        setError("Tizimga kirishda xatolik yuz berdi!");
+        setError("Tizimga kirishda xatolik yuz berdi: " + err.message);
       }
     } finally {
       setLoading(false);
@@ -74,7 +84,7 @@ export default function Login() {
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm flex items-center gap-3">
             <AlertCircle className="w-5 h-5 shrink-0" />
-            <span>{error}</span>
+            <span className="break-all">{error}</span>
           </div>
         )}
 
@@ -88,7 +98,7 @@ export default function Login() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="masalan: hokim"
+                placeholder="masalan: alivaliyev"
                 className="w-full pl-11 pr-4 py-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
@@ -118,7 +128,6 @@ export default function Login() {
           </button>
         </form>
 
-        {/* Ro'yxatdan o'tish qismi */}
         <div className="text-center mt-6 pt-5 border-t border-slate-100">
           <p className="text-sm text-slate-500">
             Hali ro'yxatdan o'tmaganmisiz?{' '}
@@ -127,7 +136,6 @@ export default function Login() {
             </Link>
           </p>
         </div>
-
       </div>
     </div>
   );

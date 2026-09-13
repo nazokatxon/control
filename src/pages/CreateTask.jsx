@@ -1,24 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/config';
 import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { useAuthContext } from '../context/AuthContext';
-import { Send, CheckCircle, AlertCircle, Mic, MicOff, Phone, ArrowLeft } from 'lucide-react';
+import { Send, CheckCircle, AlertCircle, Mic, Square, Play, Pause, Phone, ArrowLeft, Trash2 } from 'lucide-react';
 import Select from 'react-select';
 
 export default function CreateTask() {
   const navigate = useNavigate();
   const { user, userData } = useAuthContext();
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [assignedTo, setAssignedTo] = useState('');
   const [deadline, setDeadline] = useState('');
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   
-  // Qaysi biri tinglanayotganini bilish uchun ('title' yoki 'description')
-  const [activeField, setActiveField] = useState(null);
+  // Ovozli xabar uchun state'lar
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBase64, setAudioBase64] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const audioPlayerRef = useRef(null);
 
   useEffect(() => {
     const fetchEmployees = async () => {
@@ -43,52 +49,64 @@ export default function CreateTask() {
     phone: emp.phone || ''
   }));
 
-  // Ovozli yozish funksiyasi (universal: title yoki description uchun)
-  const handleVoiceInput = (field) => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      alert("Sizning brauzeringiz ovozli kiritishni qo'llab-quvvatlamaydi. Iltimos, Google Chrome dan foydalaning.");
-      return;
+  // Ovoz yozishni boshlash
+  const startRecording = async () => {
+    audioChunksRef.current = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorderRef.current.onstop = () => {
+        const audioBlobObj = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const localUrl = URL.createObjectURL(audioBlobObj);
+        setAudioUrl(localUrl);
+
+        // Blob ni Base64 matnga o'tkazish (Storage'ga yuklamaslik uchun)
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlobObj);
+        reader.onloadend = () => {
+          setAudioBase64(reader.result);
+        };
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Mikrofondan foydalanish xatosi:", err);
+      alert("Mikrofonga ruxsat berilmadi yoki qurilmangizda mikrofon topilmadi.");
     }
+  };
 
-    if (activeField === field) {
-      setActiveField(null);
-      return;
+  // Ovoz yozishni to'xtatish
+  const stopRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
     }
+    setIsRecording(false);
+  };
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'uz-UZ'; 
-    recognition.interimResults = true; 
-    recognition.continuous = true; 
+  const togglePlayAudio = () => {
+    if (!audioPlayerRef.current) return;
+    if (isPlaying) {
+      audioPlayerRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioPlayerRef.current.play();
+      setIsPlaying(true);
+    }
+  };
 
-    recognition.onstart = () => {
-      setActiveField(field);
-    };
-
-    recognition.onresult = (event) => {
-      let transcript = '';
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
-      }
-
-      if (field === 'title') {
-        setTitle(transcript);
-      } else if (field === 'description') {
-        setDescription(transcript);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      console.error("Ovozni aniqlashda xatolik:", event.error);
-      setActiveField(null);
-    };
-
-    recognition.onend = () => {
-      setActiveField(null);
-    };
-
-    recognition.start();
+  const deleteAudio = () => {
+    setAudioBase64(null);
+    setAudioUrl(null);
+    setIsPlaying(false);
   };
 
   const handleSubmit = async (e) => {
@@ -103,9 +121,10 @@ export default function CreateTask() {
     }
 
     try {
+      // To'g'ridan-to'g'ri Firestore bazasiga audio Base64 matnini saqlaymiz
       await addDoc(collection(db, 'tasks'), {
         title: title.trim(),
-        description: description.trim(),
+        audioBase64: audioBase64 || '', // Storage ishlatmasdan baza ichiga saqlanadi
         assignedTo: assignedTo,
         createdBy: user?.uid || '',
         creatorName: userData?.fullName || 'Rahbariyat',
@@ -114,11 +133,12 @@ export default function CreateTask() {
         createdAt: serverTimestamp()
       });
 
-      setMessage({ type: 'success', text: 'Topshiriq muvaffaqiyatli biriktirildi!' });
+      setMessage({ type: 'success', text: 'Topshiriq muvaffaqiyatli yuborildi!' });
       setTitle('');
-      setDescription('');
       setAssignedTo('');
       setDeadline('');
+      setAudioBase64(null);
+      setAudioUrl(null);
     } catch (err) {
       console.error("Topshiriq saqlashda xatolik:", err);
       setMessage({ type: 'error', text: 'Xatolik yuz berdi: ' + err.message });
@@ -127,13 +147,11 @@ export default function CreateTask() {
     }
   };
 
-  // Tanlangan xodim obyektini topib olish
   const selectedEmployee = employeeOptions.find(opt => opt.value === assignedTo);
 
   return (
     <div className="max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow-md border border-slate-200 my-4 space-y-4">
       
-      {/* ORQAGA QAYTISH TUGMASI */}
       <div>
         <button
           type="button"
@@ -161,28 +179,7 @@ export default function CreateTask() {
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Topshiriq Nomi */}
         <div>
-          <div className="flex justify-between items-center mb-1">
-            <label className="block text-sm font-medium text-slate-700">Topshiriq Nomi</label>
-            <button
-              type="button"
-              onClick={() => handleVoiceInput('title')}
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-xl font-semibold transition ${
-                activeField === 'title' 
-                  ? 'bg-rose-500 text-white animate-pulse' 
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              {activeField === 'title' ? (
-                <>
-                  <MicOff className="w-3.5 h-3.5" /> Tinglanmoqda...
-                </>
-              ) : (
-                <>
-                  <Mic className="w-3.5 h-3.5 text-blue-600" /> Ovoz bilan yozish
-                </>
-              )}
-            </button>
-          </div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Topshiriq Nomi</label>
           <input
             type="text"
             required
@@ -205,21 +202,8 @@ export default function CreateTask() {
             isClearable={true}
             noOptionsMessage={() => "Xodim topilmadi"}
             className="text-sm"
-            styles={{
-              control: (base, state) => ({
-                ...base,
-                borderRadius: '0.75rem',
-                borderColor: state.isFocused ? '#3b82f6' : '#cbd5e1',
-                padding: '2px',
-                boxShadow: state.isFocused ? '0 0 0 2px rgba(59, 130, 246, 0.5)' : 'none',
-                '&:hover': {
-                  borderColor: '#3b82f6'
-                }
-              })
-            }}
           />
 
-          {/* Tanlangan xodimning telefon raqami va qo'ng'iroq qilish tugmasi */}
           {assignedTo && (
             <div className="mt-2 text-xs flex items-center gap-1.5 text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
               <span className="font-medium text-slate-700">Xodim raqami:</span>
@@ -237,38 +221,65 @@ export default function CreateTask() {
           )}
         </div>
 
-        {/* Topshiriq Mazmuni */}
+        {/* OVOZLI XABAR */}
         <div>
-          <div className="flex justify-between items-center mb-1">
-            <label className="block text-sm font-medium text-slate-700">Topshiriq Mazmuni</label>
-            <button
-              type="button"
-              onClick={() => handleVoiceInput('description')}
-              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-xl font-semibold transition ${
-                activeField === 'description' 
-                  ? 'bg-rose-500 text-white animate-pulse' 
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              {activeField === 'description' ? (
-                <>
-                  <MicOff className="w-3.5 h-3.5" /> Tinglanmoqda...
-                </>
-              ) : (
-                <>
-                  <Mic className="w-3.5 h-3.5 text-blue-600" /> Ovoz bilan yozish
-                </>
-              )}
-            </button>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Topshiriq Mazmuni (Ovozli Xabar)</label>
+          
+          <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+            {!audioUrl ? (
+              <div className="flex items-center justify-between w-full">
+                <span className="text-xs text-slate-500">
+                  {isRecording ? "🔴 Ovoz yozilmoqda..." : "Mikrofonni bosing va gapiring"}
+                </span>
+                
+                {!isRecording ? (
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition shadow-sm"
+                  >
+                    <Mic className="w-4 h-4" /> Ovoz yozish
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={stopRecording}
+                    className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-semibold transition animate-pulse shadow-sm"
+                  >
+                    <Square className="w-4 h-4" /> To'xtatish
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={togglePlayAudio}
+                    className="w-9 h-9 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition"
+                  >
+                    {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                  </button>
+                  <span className="text-xs font-medium text-slate-700">Ovozli xabar tayyor 🎙️</span>
+                  <audio 
+                    ref={audioPlayerRef} 
+                    src={audioUrl} 
+                    onEnded={() => setIsPlaying(false)} 
+                    className="hidden" 
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={deleteAudio}
+                  className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                  title="Ovozni o'chirish / Qaytadan yozish"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
-          <textarea
-            rows={4}
-            required
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Topshiriq yuzasidan batafsil izoh..."
-            className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
         </div>
 
         {/* Bajarilish Muddat */}
@@ -288,7 +299,7 @@ export default function CreateTask() {
           disabled={loading}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition shadow-md disabled:opacity-50"
         >
-          {loading ? 'Biriktirilmoqda...' : 'Topshiriqni Yuborish'}
+          {loading ? 'Yuborilmoqda...' : 'Topshiriqni Yuborish'}
         </button>
       </form>
     </div>
