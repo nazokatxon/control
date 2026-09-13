@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase/config';
-import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { UserPlus, Users, CheckCircle, AlertCircle, Edit, UserCheck, UserX, XCircle, Building2, MapPin, KeyRound, Mail } from 'lucide-react';
+import { UserPlus, Users, CheckCircle, AlertCircle, Edit, UserCheck, UserX, XCircle, Building2, MapPin, KeyRound, Mail, Phone } from 'lucide-react';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -24,6 +24,7 @@ export default function ManageUsers() {
   const [password, setPassword] = useState('');
   const [workplace, setWorkplace] = useState('');
   const [mahalla, setMahalla] = useState('');
+  const [phone, setPhone] = useState('');
   
   const [editingUser, setEditingUser] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -52,6 +53,7 @@ export default function ManageUsers() {
     setPassword('');
     setWorkplace('');
     setMahalla('');
+    setPhone('');
     setEditingUser(null);
   };
 
@@ -60,10 +62,10 @@ export default function ManageUsers() {
     setFullName(usr.fullName || '');
     setWorkplace(usr.workplace || '');
     setMahalla(usr.mahalla || '');
+    setPhone(usr.phone || '');
     const rawLogin = usr.email ? usr.email.replace('@tuman.uz', '') : '';
     setLoginInput(rawLogin);
     setPassword(usr.tempPassword || '');
-    // Mobilda tahrirlash bosilganda formaga auto-scroll qilish
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -77,42 +79,23 @@ export default function ManageUsers() {
 
     try {
       if (editingUser) {
-        const loginOrPassChanged = (fullEmail !== editingUser.email) || (password !== editingUser.tempPassword);
-
-        if (loginOrPassChanged) {
-          const userCredential = await createUserWithEmailAndPassword(secondaryAuth, fullEmail, password);
-          const newUser = userCredential.user;
-
-          await setDoc(doc(db, 'users', newUser.uid), {
-            uid: newUser.uid,
-            fullName: fullName.trim(),
-            email: fullEmail,
-            role: editingUser.role || 'xodim',
-            workplace: workplace.trim(),
-            mahalla: mahalla.trim(),
-            status: editingUser.status || 'active',
-            tempPassword: password,
-            createdAt: serverTimestamp()
-          });
-
-          if (editingUser.id !== newUser.uid) {
-            await deleteDoc(doc(db, 'users', editingUser.id));
-          }
-
-        } else {
-          const userRef = doc(db, 'users', editingUser.id);
-          await updateDoc(userRef, {
-            fullName: fullName.trim(),
-            workplace: workplace.trim(),
-            mahalla: mahalla.trim()
-          });
-        }
+        // Tahrirlash jarayoni: Firestore'dagi ma'lumotlarni yangilaymiz
+        const userRef = doc(db, 'users', editingUser.id);
+        await updateDoc(userRef, {
+          fullName: fullName.trim(),
+          email: fullEmail,
+          workplace: workplace.trim(),
+          mahalla: mahalla.trim(),
+          phone: phone.trim(),
+          tempPassword: password
+        });
 
         setMessage({ type: 'success', text: "Xodim ma'lumotlari yangilandi!" });
         resetForm();
         fetchUsers();
 
       } else {
+        // Yangi xodim qo'shish
         const userCredential = await createUserWithEmailAndPassword(secondaryAuth, fullEmail, password);
         const newUser = userCredential.user;
 
@@ -123,6 +106,7 @@ export default function ManageUsers() {
           role: 'xodim',
           workplace: workplace.trim(),
           mahalla: mahalla.trim(),
+          phone: phone.trim(),
           status: 'active',
           tempPassword: password,
           createdAt: serverTimestamp()
@@ -220,6 +204,18 @@ export default function ManageUsers() {
             </div>
 
             <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Telefon Raqami</label>
+              <input
+                type="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+998 90 123 45 67"
+                className="w-full px-3.5 py-2.5 sm:py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Login</label>
               <input
                 type="text"
@@ -266,7 +262,7 @@ export default function ManageUsers() {
             <Users className="w-5 h-5 text-slate-600" /> Barcha Xodimlar va Kirish Ma'lumotlari
           </h2>
 
-          {/* MOBIL VERSIIYA (Cards View) - sm va undan kichik ekranlarda ko'rinadi */}
+          {/* MOBIL VERSIIYA (Cards View) */}
           <div className="block sm:hidden space-y-3">
             {usersList.length > 0 ? (
               usersList.map((usr) => (
@@ -292,6 +288,16 @@ export default function ManageUsers() {
                     <div className="flex items-center gap-2">
                       <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span><strong>Mahalla:</strong> {usr.mahalla || '—'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      {usr.phone ? (
+                        <a href={`tel:${usr.phone}`} className="text-emerald-600 font-semibold hover:underline">
+                          {usr.phone}
+                        </a>
+                      ) : (
+                        <span className="text-slate-400 italic">Raqam yo'q</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
@@ -331,7 +337,7 @@ export default function ManageUsers() {
             )}
           </div>
 
-          {/* DESKTOP VERSIIYA (Table View) - faqat sm va undan katta ekranlarda ko'rinadi */}
+          {/* DESKTOP VERSIIYA (Table View) */}
           <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="bg-slate-50 text-slate-700 font-semibold uppercase text-xs">
@@ -339,6 +345,7 @@ export default function ManageUsers() {
                   <th className="p-3">Xodim</th>
                   <th className="p-3">Bo'lim</th>
                   <th className="p-3">Mahalla</th>
+                  <th className="p-3">Telefon</th>
                   <th className="p-3">Login (Email)</th>
                   <th className="p-3">Paroli</th>
                   <th className="p-3">Status</th>
@@ -352,6 +359,15 @@ export default function ManageUsers() {
                       <td className="p-3 font-medium text-slate-800">{usr.fullName || '—'}</td>
                       <td className="p-3">{usr.workplace || '—'}</td>
                       <td className="p-3">{usr.mahalla || '—'}</td>
+                      <td className="p-3">
+                        {usr.phone ? (
+                          <a href={`tel:${usr.phone}`} className="text-emerald-600 font-semibold hover:underline">
+                            {usr.phone}
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 italic text-xs">Kiritilmagan</span>
+                        )}
+                      </td>
                       <td className="p-3 text-blue-600 font-mono text-xs">{usr.email}</td>
                       <td className="p-3 font-mono text-xs bg-slate-100 rounded text-slate-800 font-bold px-2 py-1 w-fit">
                         {usr.tempPassword || '******'}
@@ -397,7 +413,7 @@ export default function ManageUsers() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="p-4 text-center text-slate-400">Xodimlar topilmadi.</td>
+                    <td colSpan={8} className="p-4 text-center text-slate-400">Xodimlar topilmadi.</td>
                   </tr>
                 )}
               </tbody>

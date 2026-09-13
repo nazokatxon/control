@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { db } from '../firebase/config';
 import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { useAuthContext } from '../context/AuthContext';
-import { Send, CheckCircle, AlertCircle, Mic, MicOff } from 'lucide-react';
+import { Send, CheckCircle, AlertCircle, Mic, MicOff, Phone } from 'lucide-react';
 import Select from 'react-select';
 
 export default function CreateTask() {
@@ -37,7 +37,8 @@ export default function CreateTask() {
 
   const employeeOptions = employees.map((emp) => ({
     value: emp.id,
-    label: `${emp.fullName || emp.email} ${emp.workplace ? `(${emp.workplace})` : ''}`
+    label: `${emp.fullName || emp.email} ${emp.workplace ? `(${emp.workplace})` : ''}`,
+    phone: emp.phone || ''
   }));
 
   // Ovozli yozish funksiyasi (universal: title yoki description uchun)
@@ -124,6 +125,9 @@ export default function CreateTask() {
     }
   };
 
+  // Tanlangan xodim obyektini topib olish
+  const selectedEmployee = employeeOptions.find(opt => opt.value === assignedTo);
+
   return (
     <div className="max-w-2xl mx-auto bg-white p-6 rounded-2xl shadow-md border border-slate-200">
       <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
@@ -179,7 +183,7 @@ export default function CreateTask() {
           <label className="block text-sm font-medium text-slate-700 mb-1">Mas'ul Xodim</label>
           <Select
             options={employeeOptions}
-            value={employeeOptions.find(opt => opt.value === assignedTo) || null}
+            value={selectedEmployee || null}
             onChange={(selectedOption) => setAssignedTo(selectedOption ? selectedOption.value : '')}
             placeholder="-- Xodimni izlang va tanlang --"
             isSearchable={true}
@@ -199,6 +203,23 @@ export default function CreateTask() {
               })
             }}
           />
+
+          {/* Tanlangan xodimning telefon raqami va qo'ng'iroq qilish tugmasi */}
+          {assignedTo && (
+            <div className="mt-2 text-xs flex items-center gap-1.5 text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <span className="font-medium text-slate-700">Xodim raqami:</span>
+              {selectedEmployee?.phone ? (
+                <a 
+                  href={`tel:${selectedEmployee.phone}`}
+                  className="text-blue-600 font-bold hover:underline flex items-center gap-1.5 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200"
+                >
+                  <Phone className="w-3.5 h-3.5" /> {selectedEmployee.phone}
+                </a>
+              ) : (
+                <span className="text-amber-600 italic">Bu xodimga telefon raqam kiritilmagan</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Topshiriq Mazmuni */}
