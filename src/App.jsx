@@ -8,6 +8,7 @@ import CreateTask from './pages/CreateTask';
 import ManageUsers from './pages/ManageUsers';
 import TaskDetails from './pages/TaskDetails';
 import Chat from './pages/Chat'; 
+import Register from './pages/Register';
 import Profile from './pages/Profile';
 import Xodimlar from './pages/Xodimlar'; 
 import HokimEmployees from "./pages/HokimEmployees";
@@ -71,7 +72,8 @@ function MainLayout() {
           {/* Ochiq yo'llar */}
           <Route element={<PublicRoute />}>
             <Route path="/login" element={<Login />} />
-          </Route>
+            <Route path="/register" element={<Register />} />
+        </Route>
 
           {/* Barcha avtorizatsiyadan o'tganlar uchun */}
           <Route element={<ProtectedRoute />}>

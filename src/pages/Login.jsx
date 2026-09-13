@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
-import { LogIn, Lock, User, AlertCircle } from 'lucide-react';
+import { LogIn, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -31,10 +31,14 @@ export default function Login() {
       const userDoc = await getDoc(doc(db, 'users', user.uid));
 
       if (userDoc.exists()) {
-        // Muvaffaqiyatli kirildi - Dashboard sahifasiga yo'naltirish
-        navigate('/dashboard', { replace: true });
+        const userData = userDoc.data();
+        if (userData.role === 'yordamchi' || userData.role === 'orinbosar') {
+          navigate('/yordamchi', { replace: true });
+        } else {
+          navigate('/dashboard', { replace: true });
+        }
       } else {
-        setError("Foydalanuvchi ma'lumotlari Firestore'dan topilmadi!");
+        navigate('/dashboard', { replace: true });
       }
     } catch (err) {
       console.error("Login xatosi:", err);
@@ -113,6 +117,17 @@ export default function Login() {
             {loading ? 'Kirilmoqda...' : 'Tizimga Kirish'}
           </button>
         </form>
+
+        {/* Ro'yxatdan o'tish qismi */}
+        <div className="text-center mt-6 pt-5 border-t border-slate-100">
+          <p className="text-sm text-slate-500">
+            Hali ro'yxatdan o'tmaganmisiz?{' '}
+            <Link to="/register" className="text-blue-600 font-semibold hover:underline inline-flex items-center gap-1">
+              Ro'yxatdan o'tish <ArrowRight className="w-4 h-4" />
+            </Link>
+          </p>
+        </div>
+
       </div>
     </div>
   );
