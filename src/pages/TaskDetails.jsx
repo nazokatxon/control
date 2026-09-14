@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getTaskById, updateTaskStatus } from "../services/taskService";
 import { useAuth } from "../hooks/useAuth";
+import { Play, Pause } from "lucide-react";
 
 export default function TaskDetails() {
   const { id } = useParams();
@@ -14,6 +15,8 @@ export default function TaskDetails() {
   const [imageUrl, setImageUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef(null);
 
   useEffect(() => {
     const fetchTask = async () => {
@@ -30,6 +33,17 @@ export default function TaskDetails() {
     };
     fetchTask();
   }, [id]);
+
+  const togglePlayAudio = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
+  };
 
   // Status va Hisobotni yangilash
   const handleUpdate = async (e) => {
@@ -127,6 +141,29 @@ export default function TaskDetails() {
           <span className="font-semibold text-gray-700 min-w-[110px]">Batafsil:</span>
           <span className="text-gray-600 break-words">{task.description || "Kiritilmagan"}</span>
         </div>
+
+        {/* OVOZLI XABAR PLEYERI */}
+        {task.audioBase64 && (
+          <div className="flex items-center gap-3 pt-1">
+            <span className="font-semibold text-gray-700 min-w-[110px]">Ovozli xabar:</span>
+            <div className="flex items-center gap-3 bg-white px-3 py-2 rounded-xl border border-blue-200 shadow-sm">
+              <button
+                type="button"
+                onClick={togglePlayAudio}
+                className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition"
+              >
+                {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+              </button>
+              <span className="text-xs font-medium text-slate-700">Ovozli topshiriq 🎙️</span>
+              <audio 
+                ref={audioRef} 
+                src={task.audioBase64} 
+                onEnded={() => setIsPlaying(false)} 
+                className="hidden" 
+              />
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <span className="font-semibold text-gray-700 min-w-[110px]">Mahalla:</span>

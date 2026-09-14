@@ -67,7 +67,6 @@ export default function CreateTask() {
         const localUrl = URL.createObjectURL(audioBlobObj);
         setAudioUrl(localUrl);
 
-        // Blob ni Base64 matnga o'tkazish (Storage'ga yuklamaslik uchun)
         const reader = new FileReader();
         reader.readAsDataURL(audioBlobObj);
         reader.onloadend = () => {
@@ -85,11 +84,11 @@ export default function CreateTask() {
 
   // Ovoz yozishni to'xtatish
   const stopRecording = () => {
-    if (mediaRecorderRef.current) {
+    if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      setIsRecording(false);
     }
-    setIsRecording(false);
   };
 
   const togglePlayAudio = () => {
@@ -109,6 +108,16 @@ export default function CreateTask() {
     setIsPlaying(false);
   };
 
+  // Blob'ni Base64 ga vaqtida o'tkazish uchun yordamchifunksiya
+  const convertBlobToBase64 = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -121,10 +130,17 @@ export default function CreateTask() {
     }
 
     try {
-      // To'g'ridan-to'g'ri Firestore bazasiga audio Base64 matnini saqlaymiz
+      let finalAudioBase64 = audioBase64;
+
+      // Agar hali yozish to'xtatilgan bo'lsa-yu, lekin chunks ichida ovoz bo'lsa, uni bazaga yuborishdan oldin majburiy o'tamiz
+      if (!finalAudioBase64 && audioChunksRef.current.length > 0) {
+        const audioBlobObj = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        finalAudioBase64 = await convertBlobToBase64(audioBlobObj);
+      }
+
       await addDoc(collection(db, 'tasks'), {
         title: title.trim(),
-        audioBase64: audioBase64 || '', // Storage ishlatmasdan baza ichiga saqlanadi
+        audioBase64: finalAudioBase64 || '',
         assignedTo: assignedTo,
         createdBy: user?.uid || '',
         creatorName: userData?.fullName || 'Rahbariyat',
@@ -139,6 +155,7 @@ export default function CreateTask() {
       setDeadline('');
       setAudioBase64(null);
       setAudioUrl(null);
+      audioChunksRef.current = [];
     } catch (err) {
       console.error("Topshiriq saqlashda xatolik:", err);
       setMessage({ type: 'error', text: 'Xatolik yuz berdi: ' + err.message });
