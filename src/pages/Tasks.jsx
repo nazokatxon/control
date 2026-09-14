@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { getAllTasks, getEmployeeTasks, updateTaskStatus } from "../services/taskService";
 import { db } from "../firebase/config";
-import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import { useAuth } from "../hooks/useAuth";
-import { Paperclip, PlayCircle, CheckCircle, Eye, ArrowLeft } from "lucide-react";
+import { Paperclip, PlayCircle, CheckCircle, Eye, ArrowLeft, User } from "lucide-react";
 
 export default function Tasks() {
   const navigate = useNavigate();
@@ -14,6 +14,7 @@ export default function Tasks() {
   const currentStatusParam = searchParams.get("status") || "all";
 
   const [tasks, setTasks] = useState([]);
+  const [employeesMap, setEmployeesMap] = useState({}); // Xodimlar ID si bo'yicha ismini saqlash uchun
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [activeFilter, setActiveFilter] = useState(currentStatusParam);
@@ -22,16 +23,28 @@ export default function Tasks() {
   const isHokim = userRole === "hokim" || userRole === "admin";
 
   useEffect(() => {
-    fetchTasks();
+    fetchData();
   }, [user, userRole]);
 
   useEffect(() => {
     setActiveFilter(searchParams.get("status") || "all");
   }, [searchParams]);
 
-  const fetchTasks = async () => {
+  // Topshiriqlar va xodimlarni birga yuklab olish
+  const fetchData = async () => {
     try {
       setLoading(true);
+      
+      // 1. Xodimlarni yuklab olib map qilish (ID -> Ism)
+      const usersSnap = await getDocs(collection(db, "users"));
+      const map = {};
+      usersSnap.forEach((docSnap) => {
+        const data = docSnap.data();
+        map[docSnap.id] = data.fullName || data.name || data.email || "Noma'lum xodim";
+      });
+      setEmployeesMap(map);
+
+      // 2. Topshiriqlarni olish
       let data = [];
       if (isManager) {
         data = await getAllTasks();
@@ -40,7 +53,7 @@ export default function Tasks() {
       }
       setTasks(data || []);
     } catch (err) {
-      console.error("Topshiriqlarni olishda xatolik:", err);
+      console.error("Ma'lumotlarni olishda xatolik:", err);
     } finally {
       setLoading(false);
     }
@@ -59,31 +72,25 @@ export default function Tasks() {
     }
   };
 
-  // Hokim "Ko'rish" ni bosganda holatni "Ko'rildi" qilish va 0.5 ball qo'shish
   const handleHokimView = async (task) => {
-    // Agar allaqachon ko'rilgan bo'lsa, qayta bajarilmaydi
     if (task.status === "ko'rildi" || task.status === "viewed") return;
 
     try {
       setUpdatingId(task.id);
       const taskRef = doc(db, "tasks", task.id);
       
-      // 1. Vazifa statusini "ko'rildi" ga o'zgartirish
       await updateDoc(taskRef, { status: "ko'rildi" });
 
-      // 2. Agar xodimga biriktirilgan bo'lsa, uning baliga 0.5 qo'shish
       if (task.assignedTo) {
         const userRef = doc(db, "users", task.assignedTo);
         const userSnap = await getDoc(userRef);
         
         if (userSnap.exists()) {
-          // Ball mavjud bo'lmasa 0 dan boshlab increment qilamiz
           const currentPoints = userSnap.data().points || 0;
           await updateDoc(userRef, { points: currentPoints + 0.5 });
         }
       }
 
-      // Local state'ni yangilash
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: "ko'rildi" } : t));
     } catch (err) {
       console.error("Ko'rildi qilishda xatolik:", err);
@@ -140,7 +147,6 @@ export default function Tasks() {
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
       
-      {/* ORQAGA QAYTISH TUGMASI */}
       <div>
         <button
           type="button"
@@ -168,7 +174,6 @@ export default function Tasks() {
         )}
       </div>
 
-      {/* FILTER TABLARI */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
         <button
           onClick={() => handleFilterChange("all")}
@@ -213,6 +218,11 @@ export default function Tasks() {
           {filteredTasks.map((task) => {
             const isCompletedByEmployee = task.status === "completed" || task.status === "COMPLETED" || task.status === "bajarildi";
             const isAlreadyViewed = task.status === "ko'rildi" || task.status === "viewed";
+            
+            // Xodimning ismini aniqlash (assignedTo ID bo'yicha yoki to'g'ridan-to'g'ri yozilgan ism)
+            const employeeName = task.assignedTo && employeesMap[task.assignedTo] 
+              ? employeesMap[task.assignedTo] 
+              : (task.assignedToName || task.employeeName || task.person || "Biriktirilmagan");
 
             return (
               <div key={task.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between space-y-4 hover:shadow-md transition">
@@ -225,7 +235,11 @@ export default function Tasks() {
                   <p className="text-slate-600 text-xs sm:text-sm mb-4 line-clamp-3">{task.description || task.batafsil}</p>
 
                   <div className="bg-slate-50 p-3 rounded-xl text-xs text-slate-600 space-y-1.5 mb-2">
-                    <p><strong className="text-slate-800">📍 Mahalla:</strong> {task.mahalla || "Kiritilmagan"}</p>
+                    {/* MAS'UL XODIMNI CHIQARISH QISMI */}
+                    <p className="flex items-center gap-1.5 font-medium text-blue-700 bg-blue-50/50 p-1 rounded">
+                      <User className="w-3.5 h-3.5" />
+                      <span>Xodim:</span> <strong className="text-slate-800">{employeeName}</strong>
+                    </p>
                     <p><strong className="text-slate-800">📅 Muddat:</strong> {task.deadline || task.muddati}</p>
                     {task.fileUrl && (
                       <p className="flex items-center gap-1 text-blue-600 font-medium pt-1">
@@ -238,9 +252,7 @@ export default function Tasks() {
                   </div>
                 </div>
 
-                {/* AMALLAR QISMI */}
                 <div className="space-y-2 pt-2 border-t border-slate-100">
-                  {/* XODIM UCHUN */}
                   {!isManager && task.status !== "completed" && task.status !== "COMPLETED" && task.status !== "bajarildi" && !isAlreadyViewed && (
                     <div className="flex items-center gap-2">
                       {task.status !== "in_progress" && task.status !== "IN_PROGRESS" && task.status !== "jarayonda" && (
@@ -264,7 +276,6 @@ export default function Tasks() {
                     </div>
                   )}
 
-                  {/* HOKIM UCHUN: Agar xodim bajarib qo'ygan bo'lsa, "Ko'rish" tugmasi chiqadi */}
                   {isHokim && isCompletedByEmployee ? (
                     <button
                       onClick={() => handleHokimView(task)}

@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getTaskById, updateTaskStatus } from "../services/taskService";
 import { useAuth } from "../hooks/useAuth";
-import { Play, Pause } from "lucide-react";
+import { db } from "../firebase/config";
+import { doc, getDoc } from "firebase/firestore";
+import { Play, Pause, User } from "lucide-react";
 
 export default function TaskDetails() {
   const { id } = useParams();
@@ -10,6 +12,7 @@ export default function TaskDetails() {
   const navigate = useNavigate();
 
   const [task, setTask] = useState(null);
+  const [employeeName, setEmployeeName] = useState("Biriktirilmagan");
   const [status, setStatus] = useState("in_progress");
   const [comment, setComment] = useState("");
   const [imageUrl, setImageUrl] = useState("");
@@ -19,19 +22,38 @@ export default function TaskDetails() {
   const audioRef = useRef(null);
 
   useEffect(() => {
-    const fetchTask = async () => {
-      const data = await getTaskById(id);
-      if (data) {
-        setTask(data);
-        setStatus(data.status || "in_progress");
-        if (data.report) {
-          setComment(data.report.comment || "");
-          setImageUrl(data.report.imageUrl || "");
+    const fetchTaskDetails = async () => {
+      try {
+        const data = await getTaskById(id);
+        if (data) {
+          setTask(data);
+          setStatus(data.status || "in_progress");
+          if (data.report) {
+            setComment(data.report.comment || "");
+            setImageUrl(data.report.imageUrl || "");
+          }
+
+          // Mas'ul xodimning ismini topish
+          if (data.assignedTo) {
+            const userRef = doc(db, "users", data.assignedTo);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              const userData = userSnap.data();
+              setEmployeeName(userData.fullName || userData.name || userData.email || "Noma'lum xodim");
+            } else {
+              setEmployeeName(data.assignedToName || data.employeeName || data.person || "Biriktirilmagan");
+            }
+          } else {
+            setEmployeeName(data.assignedToName || data.employeeName || data.person || "Biriktirilmagan");
+          }
         }
+      } catch (err) {
+        console.error("Topshiriqni yuklashda xatolik:", err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
-    fetchTask();
+    fetchTaskDetails();
   }, [id]);
 
   const togglePlayAudio = () => {
@@ -45,7 +67,6 @@ export default function TaskDetails() {
     }
   };
 
-  // Status va Hisobotni yangilash
   const handleUpdate = async (e) => {
     if (e) e.preventDefault();
     setUpdating(true);
@@ -61,7 +82,6 @@ export default function TaskDetails() {
     }
   };
 
-  // Bir bosishda tezkor "Bajarildi" statusiga o'tkazish
   const handleQuickComplete = async () => {
     setUpdating(true);
     try {
@@ -77,44 +97,26 @@ export default function TaskDetails() {
     }
   };
 
-  // Statuslarni o'zbekcha dizaynda ko'rsatish
   const renderStatusBadge = (st) => {
     const statusKey = st?.toLowerCase();
     switch (statusKey) {
       case "in_progress":
       case "jarayonda":
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
-            🟡 Jarayonda
-          </span>
-        );
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">🟡 Jarayonda</span>;
       case "completed":
       case "bajarildi":
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">
-            ✅ Bajarildi
-          </span>
-        );
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">✅ Bajarildi</span>;
+      case "ko'rildi":
+      case "viewed":
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">👁️ Ko'rildi</span>;
       case "pending":
       case "kutilmoqda":
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
-            ⏳ Kutilmoqda
-          </span>
-        );
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">⏳ Kutilmoqda</span>;
       case "overdue":
       case "kechikmoqda":
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">
-            🔴 Kechikmoqda
-          </span>
-        );
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700 border border-red-200">🔴 Kechikmoqda</span>;
       default:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">
-            {st || "Noma'lum"}
-          </span>
-        );
+        return <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">{st || "Noma'lum"}</span>;
     }
   };
 
@@ -124,7 +126,6 @@ export default function TaskDetails() {
   return (
     <div className="max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-sm border border-gray-100 mt-8">
       
-      {/* Sarlavha va Orqaga */}
       <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
         <h2 className="text-2xl font-bold text-gray-800">{task.title || task.name || "Topshiriq"}</h2>
         <button
@@ -135,14 +136,20 @@ export default function TaskDetails() {
         </button>
       </div>
 
-      {/* Asosiy ma'lumotlar */}
       <div className="bg-gray-50/70 p-5 rounded-xl mb-6 space-y-3 text-sm border border-gray-100">
+        
+        {/* MAS'UL XODIM QISMI */}
+        <div className="flex items-center gap-2 bg-blue-50/60 p-2 rounded-lg border border-blue-100">
+          <User className="w-4 h-4 text-blue-600" />
+          <span className="font-semibold text-gray-700 min-w-[100px]">Mas'ul xodim:</span>
+          <span className="text-blue-700 font-bold">{employeeName}</span>
+        </div>
+
         <div className="flex items-start gap-2">
           <span className="font-semibold text-gray-700 min-w-[110px]">Batafsil:</span>
           <span className="text-gray-600 break-words">{task.description || "Kiritilmagan"}</span>
         </div>
 
-        {/* OVOZLI XABAR PLEYERI */}
         {task.audioBase64 && (
           <div className="flex items-center gap-3 pt-1">
             <span className="font-semibold text-gray-700 min-w-[110px]">Ovozli xabar:</span>
@@ -166,13 +173,6 @@ export default function TaskDetails() {
         )}
 
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-gray-700 min-w-[110px]">Mahalla:</span>
-          <span className="text-gray-600">
-            {task.mahalla || <span className="text-gray-400 italic">Kiritilmagan</span>}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
           <span className="font-semibold text-gray-700 min-w-[110px]">Muddati:</span>
           <span className="text-gray-600 font-medium">{task.deadline || "Belgilanmagan"}</span>
         </div>
@@ -183,7 +183,6 @@ export default function TaskDetails() {
         </div>
       </div>
 
-      {/* Xodim uchun hisobot topshirish formasi */}
       {userRole === "employee" && (
         <form onSubmit={handleUpdate} className="space-y-4 pt-2">
           <div className="flex items-center justify-between">
@@ -247,7 +246,6 @@ export default function TaskDetails() {
         </form>
       )}
 
-      {/* Topshirilgan hisobot moduli */}
       {task.report && (task.report.comment || task.report.imageUrl) && (
         <div className="border-t border-gray-100 pt-6 mt-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-3">Xodimlarning Hisoboti</h3>
